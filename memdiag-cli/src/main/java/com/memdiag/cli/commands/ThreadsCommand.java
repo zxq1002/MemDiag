@@ -1,5 +1,6 @@
 package com.memdiag.cli.commands;
 
+import com.memdiag.cli.client.AgentClient;
 import com.memdiag.core.heap.JmxHeapAnalyzer;
 import com.memdiag.core.thread.StackFrame;
 import com.memdiag.core.thread.ThreadAnalyzer;
@@ -14,10 +15,7 @@ import java.util.List;
 import java.util.Map;
 
 @CommandLine.Command(name = "threads", description = "Show thread analysis")
-public class ThreadsCommand implements Runnable {
-
-    @CommandLine.Parameters(index = "0", description = "PID (optional for current JVM)", arity = "0..1")
-    private String pid;
+public class ThreadsCommand extends BaseCommand {
 
     @CommandLine.Option(names = {"-l", "--limit"}, defaultValue = "20")
     private int limit;
@@ -27,19 +25,39 @@ public class ThreadsCommand implements Runnable {
 
     @Override
     public void run() {
-        JmxClient client = pid != null && !pid.isEmpty()
-            ? JmxClient.attachToPid(pid)
-            : JmxClient.attachToCurrentJvm();
-        ThreadAnalyzer analyzer = new ThreadAnalyzer(client);
-        ThreadDump dump = analyzer.getThreadDump();
+        ThreadDump dump;
+        ThreadAnalyzer analyzer = null;
+
+        if (isAgentMode()) {
+            AgentClient client = createAgentClient();
+            try {
+                dump = client.getThreadDump();
+            } catch (Exception e) {
+                System.err.println("Failed to connect to agent: " + e.getMessage());
+                return;
+            }
+        } else {
+            JmxClient client;
+            if (pid != null && !pid.isEmpty()) {
+                client = JmxClient.attachToPid(pid);
+            } else {
+                client = JmxClient.attachToCurrentJvm();
+            }
+            analyzer = new ThreadAnalyzer(client);
+            dump = analyzer.getThreadDump();
+        }
 
         System.out.println("THREAD ANALYSIS");
         System.out.println("==========================================================================");
-        System.out.printf("Total: %d, Peak: %d, Daemon: %d, Started: %d%n",
-            dump.getThreadCount(),
-            analyzer.getPeakThreadCount(),
-            analyzer.getDaemonThreadCount(),
-            analyzer.getTotalStartedThreadCount());
+        if (analyzer != null) {
+            System.out.printf("Total: %d, Peak: %d, Daemon: %d, Started: %d%n",
+                dump.getThreadCount(),
+                analyzer.getPeakThreadCount(),
+                analyzer.getDaemonThreadCount(),
+                analyzer.getTotalStartedThreadCount());
+        } else {
+            System.out.printf("Total: %d%n", dump.getThreadCount());
+        }
         System.out.println();
 
         System.out.println("THREAD STATES:");

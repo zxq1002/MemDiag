@@ -1,5 +1,6 @@
 package com.memdiag.cli.commands;
 
+import com.memdiag.cli.client.AgentClient;
 import com.memdiag.core.diagnose.DiagnosisEngine;
 import com.memdiag.core.diagnose.DiagnosisResult;
 import com.memdiag.core.diagnose.Issue;
@@ -12,21 +13,32 @@ import com.memdiag.core.util.JmxClient;
 import picocli.CommandLine;
 
 @CommandLine.Command(name = "diagnose", description = "Run diagnosis and show issues")
-public class DiagnoseCommand implements Runnable {
-
-    @CommandLine.Parameters(index = "0", description = "PID (optional for current JVM)", arity = "0..1")
-    private String pid;
+public class DiagnoseCommand extends BaseCommand {
 
     @Override
     public void run() {
-        JmxClient client = pid != null && !pid.isEmpty()
-            ? JmxClient.attachToPid(pid)
-            : JmxClient.attachToCurrentJvm();
-        HeapAnalyzer heapAnalyzer = new JmxHeapAnalyzer(client);
-        ThreadAnalyzer threadAnalyzer = new ThreadAnalyzer(client);
-        DiagnosisEngine engine = new DiagnosisEngine(client, heapAnalyzer, threadAnalyzer);
+        DiagnosisResult result;
 
-        DiagnosisResult result = engine.analyze();
+        if (isAgentMode()) {
+            AgentClient client = createAgentClient();
+            try {
+                result = client.getDiagnosis();
+            } catch (Exception e) {
+                System.err.println("Failed to connect to agent: " + e.getMessage());
+                return;
+            }
+        } else {
+            JmxClient client;
+            if (pid != null && !pid.isEmpty()) {
+                client = JmxClient.attachToPid(pid);
+            } else {
+                client = JmxClient.attachToCurrentJvm();
+            }
+            HeapAnalyzer heapAnalyzer = new JmxHeapAnalyzer(client);
+            ThreadAnalyzer threadAnalyzer = new ThreadAnalyzer(client);
+            DiagnosisEngine engine = new DiagnosisEngine(client, heapAnalyzer, threadAnalyzer);
+            result = engine.analyze();
+        }
 
         System.out.println("DIAGNOSIS REPORT");
         System.out.println("==========================================================================");
