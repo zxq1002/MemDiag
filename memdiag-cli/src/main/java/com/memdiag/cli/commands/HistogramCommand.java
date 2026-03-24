@@ -18,7 +18,12 @@ public class HistogramCommand implements Runnable {
 
     @Override
     public void run() {
-        JmxClient client = JmxClient.attachToCurrentJvm();
+        JmxClient client;
+        if (pid != null && !pid.isEmpty()) {
+            client = JmxClient.attachToPid(pid);
+        } else {
+            client = JmxClient.attachToCurrentJvm();
+        }
         HeapAnalyzer analyzer = new JmxHeapAnalyzer(client);
         HeapHistogram histogram = analyzer.getHistogram(limit);
 

@@ -15,6 +15,15 @@
     <description>Core analysis library</description>
 
     <dependencies>
+        <!-- JDK Tools - for Attach API and HotSpotDiagnosticMXBean -->
+        <dependency>
+            <groupId>com.sun</groupId>
+            <artifactId>tools</artifactId>
+            <version>1.8</version>
+            <scope>system</scope>
+            <systemPath>${java.home}/../lib/tools.jar</systemPath>
+            <optional>true</optional>
+        </dependency>
         <dependency>
             <groupId>org.junit.jupiter</groupId>
             <artifactId>junit-jupiter</artifactId>
@@ -26,4 +35,24 @@
             <scope>test</scope>
         </dependency>
     </dependencies>
+
+    <profiles>
+        <!-- Profile for JDK 9+ where tools.jar is modularized -->
+        <profile>
+            <id>jdk9-plus</id>
+            <activation>
+                <jdk>[9,)</jdk>
+            </activation>
+            <dependencies>
+                <dependency>
+                    <groupId>com.sun</groupId>
+                    <artifactId>tools</artifactId>
+                    <version>1.8</version>
+                    <scope>system</scope>
+                    <systemPath>${java.home}/lib/jrt-fs.jar</systemPath>
+                    <optional>true</optional>
+                </dependency>
+            </dependencies>
+        </profile>
+    </profiles>
 </project>
