@@ -1,11 +1,13 @@
 package com.memdiag.cli;
 
+import com.memdiag.cli.commands.DiagnoseCommand;
 import com.memdiag.cli.commands.HistogramCommand;
+import com.memdiag.cli.commands.ThreadsCommand;
 import picocli.CommandLine;
 import picocli.CommandLine.Command;
 
 @Command(name = "memdiag",
-         subcommands = {HistogramCommand.class},
+         subcommands = {HistogramCommand.class, ThreadsCommand.class, DiagnoseCommand.class},
          description = "JVM Memory Diagnosis Tool")
 public class MemDiagCli {
     public static void main(String[] args) {

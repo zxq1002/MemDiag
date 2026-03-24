@@ -16,6 +16,14 @@ public class JmxHeapAnalyzer implements HeapAnalyzer {
 
     @Override
     public HeapHistogram getHistogram(int limit) {
+        HeapHistogram full = getFullHistogram();
+        HeapHistogram limited = new HeapHistogram();
+        full.getTopByShallowBytes(limit).forEach(limited::add);
+        return limited;
+    }
+
+    @Override
+    public HeapHistogram getFullHistogram() {
         try {
             ObjectName diagnosticName = new ObjectName("com.sun.management:type=DiagnosticCommand");
 
@@ -27,14 +35,14 @@ public class JmxHeapAnalyzer implements HeapAnalyzer {
                 new String[]{String[].class.getName()}
             );
 
-            return parseClassHistogram(result, limit);
+            return parseClassHistogram(result);
         } catch (Exception e) {
             // 如果 DiagnosticCommand 不可用，回退到测试数据
             return getFallbackHistogram();
         }
     }
 
-    private HeapHistogram parseClassHistogram(String output, int limit) {
+    private HeapHistogram parseClassHistogram(String output) {
         HeapHistogram histogram = new HeapHistogram();
 
         try (BufferedReader reader = new BufferedReader(new StringReader(output))) {
