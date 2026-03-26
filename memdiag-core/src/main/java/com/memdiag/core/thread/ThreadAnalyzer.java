@@ -33,17 +33,19 @@ public class ThreadAnalyzer {
     }
 
     public ThreadDump getThreadDump() {
-        Map<Long, ThreadDump.ThreadInfo> threadInfos = new HashMap<>();
+        ThreadDump dump = new ThreadDump();
+        dump.setTimestamp(Instant.now());
+
         long[] allThreadIds = threadMXBean.getAllThreadIds();
 
         for (long threadId : allThreadIds) {
             ThreadInfo info = threadMXBean.getThreadInfo(threadId, Integer.MAX_VALUE);
             if (info != null) {
-                threadInfos.put(threadId, convertThreadInfo(info));
+                dump.addThreadStats(convertToThreadStatsWithStack(info));
             }
         }
 
-        return ThreadDump.create(Instant.now(), threadInfos);
+        return dump;
     }
 
     public List<ThreadStats> getThreadStats() {
@@ -53,7 +55,7 @@ public class ThreadAnalyzer {
         for (long threadId : allThreadIds) {
             ThreadInfo info = threadMXBean.getThreadInfo(threadId, 0);
             if (info != null) {
-                stats.add(convertThreadStats(info));
+                stats.add(convertToThreadStats(info));
             }
         }
 
@@ -62,11 +64,42 @@ public class ThreadAnalyzer {
 
     public ThreadStats getThreadStats(long threadId) {
         ThreadInfo info = threadMXBean.getThreadInfo(threadId, 0);
-        return info != null ? convertThreadStats(info) : null;
+        return info != null ? convertToThreadStats(info) : null;
     }
 
+    private ThreadStats convertToThreadStats(ThreadInfo jmxInfo) {
+        ThreadStats stats = new ThreadStats();
+        stats.setThreadId(jmxInfo.getThreadId());
+        stats.setThreadName(jmxInfo.getThreadName());
+        stats.setState(convertState(jmxInfo.getThreadState()));
+        stats.setBlockedCount(jmxInfo.getBlockedCount());
+        stats.setBlockedTime(jmxInfo.getBlockedTime());
+        stats.setWaitedCount(jmxInfo.getWaitedCount());
+        stats.setWaitedTime(jmxInfo.getWaitedTime());
+        return stats;
+    }
+
+    private ThreadStats convertToThreadStatsWithStack(ThreadInfo jmxInfo) {
+        ThreadStats stats = convertToThreadStats(jmxInfo);
+
+        List<StackFrame> stackFrames = new ArrayList<>();
+        for (StackTraceElement element : jmxInfo.getStackTrace()) {
+            StackFrame frame = new StackFrame();
+            frame.setClassName(element.getClassName());
+            frame.setMethodName(element.getMethodName());
+            frame.setFileName(element.getFileName());
+            frame.setLineNumber(element.getLineNumber());
+            frame.setNativeMethod(element.isNativeMethod());
+            stackFrames.add(frame);
+        }
+        stats.setStackTrace(stackFrames);
+
+        return stats;
+    }
+
+    @Deprecated
     private ThreadDump.ThreadInfo convertThreadInfo(ThreadInfo jmxInfo) {
-        ThreadStats stats = convertThreadStats(jmxInfo);
+        ThreadStats stats = convertToThreadStats(jmxInfo);
 
         List<StackFrame> stackFrames = new ArrayList<>();
         for (StackTraceElement element : jmxInfo.getStackTrace()) {
@@ -102,6 +135,7 @@ public class ThreadAnalyzer {
         return builder.build();
     }
 
+    @Deprecated
     private ThreadStats convertThreadStats(ThreadInfo jmxInfo) {
         return ThreadStats.builder()
             .threadId(jmxInfo.getThreadId())

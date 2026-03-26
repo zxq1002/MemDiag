@@ -12,7 +12,7 @@ import com.memdiag.core.thread.ThreadAnalyzer;
 import com.memdiag.core.util.JmxClient;
 import picocli.CommandLine;
 
-@CommandLine.Command(name = "diagnose", description = "Run diagnosis and show issues")
+@CommandLine.Command(name = "diagnose", description = "Run diagnosis and show issues", mixinStandardHelpOptions = true)
 public class DiagnoseCommand extends BaseCommand {
 
     @Override

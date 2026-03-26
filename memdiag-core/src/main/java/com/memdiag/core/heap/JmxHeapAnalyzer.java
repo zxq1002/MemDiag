@@ -2,16 +2,33 @@ package com.memdiag.core.heap;
 
 import com.memdiag.core.exception.AnalysisException;
 import com.memdiag.core.util.JmxClient;
+import com.memdiag.core.util.ResourceLimiter;
 
 import javax.management.ObjectName;
 import java.io.BufferedReader;
 import java.io.StringReader;
+import java.time.Duration;
 
 public class JmxHeapAnalyzer implements HeapAnalyzer {
     private final JmxClient jmxClient;
+    private final ResourceLimiter resourceLimiter;
 
     public JmxHeapAnalyzer(JmxClient jmxClient) {
+        this(jmxClient, createDefaultResourceLimiter());
+    }
+
+    public JmxHeapAnalyzer(JmxClient jmxClient, ResourceLimiter resourceLimiter) {
         this.jmxClient = jmxClient;
+        this.resourceLimiter = resourceLimiter;
+    }
+
+    private static ResourceLimiter createDefaultResourceLimiter() {
+        long maxMemory = Runtime.getRuntime().maxMemory();
+        return new ResourceLimiter(
+            maxMemory,
+            Duration.ofMillis(500),
+            Duration.ofMillis(500)
+        );
     }
 
     @Override
@@ -24,22 +41,34 @@ public class JmxHeapAnalyzer implements HeapAnalyzer {
 
     @Override
     public HeapHistogram getFullHistogram() {
-        try {
-            ObjectName diagnosticName = new ObjectName("com.sun.management:type=DiagnosticCommand");
+        return resourceLimiter.executeWithLimit(() -> {
+            try {
+                ObjectName diagnosticName = new ObjectName("com.sun.management:type=DiagnosticCommand");
 
-            // 调用 gc.class_histogram 命令
-            String result = (String) jmxClient.getConnection().invoke(
-                diagnosticName,
-                "gcClassHistogram",
-                new Object[]{null},
-                new String[]{String[].class.getName()}
-            );
+                // 调用 gc.class_histogram 命令
+                String result = resourceLimiter.executeWithSafePointMonitor(() -> {
+                    try {
+                        return (String) jmxClient.getConnection().invoke(
+                            diagnosticName,
+                            "gcClassHistogram",
+                            new Object[]{null},
+                            new String[]{String[].class.getName()}
+                        );
+                    } catch (Exception e) {
+                        throw new RuntimeException(e);
+                    }
+                });
 
-            return parseClassHistogram(result);
-        } catch (Exception e) {
-            // 如果 DiagnosticCommand 不可用，回退到测试数据
-            return getFallbackHistogram();
-        }
+                return parseClassHistogram(result);
+            } catch (RuntimeException e) {
+                if (e.getCause() instanceof Exception) {
+                    throw new AnalysisException("Failed to get heap histogram via JMX", e.getCause());
+                }
+                throw new AnalysisException("Failed to get heap histogram via JMX", e);
+            } catch (Exception e) {
+                throw new AnalysisException("Failed to get heap histogram via JMX", e);
+            }
+        });
     }
 
     private HeapHistogram parseClassHistogram(String output) {
@@ -94,11 +123,4 @@ public class JmxHeapAnalyzer implements HeapAnalyzer {
         return histogram;
     }
 
-    private HeapHistogram getFallbackHistogram() {
-        HeapHistogram histogram = new HeapHistogram();
-        histogram.add(new ClassStats("java.lang.String", 1000, 64000));
-        histogram.add(new ClassStats("byte[]", 500, 512000));
-        histogram.add(new ClassStats("java.lang.Object", 2000, 32000));
-        return histogram;
-    }
 }

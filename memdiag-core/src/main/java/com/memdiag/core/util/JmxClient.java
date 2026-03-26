@@ -2,6 +2,7 @@ package com.memdiag.core.util;
 
 import com.memdiag.core.exception.AnalysisException;
 import com.memdiag.core.exception.PlatformNotSupportedException;
+import com.memdiag.core.util.EnvironmentPrecheck.PrecheckResult;
 
 import javax.management.MBeanServerConnection;
 import javax.management.ObjectName;
@@ -38,6 +39,25 @@ public class JmxClient {
     }
 
     public static JmxClient attachToPid(String pid) {
+        return attachToPid(pid, true);
+    }
+
+    public static JmxClient attachToPid(String pid, boolean performPrecheck) {
+        if (performPrecheck) {
+            PrecheckResult precheck = EnvironmentPrecheck.precheckAttach(pid);
+            if (!precheck.isPassed()) {
+                throw new AnalysisException(
+                    "Cannot attach to PID " + pid + ". " + precheck.getSummary()
+                );
+            }
+            if (!precheck.getWarnings().isEmpty()) {
+                System.err.println("Warnings during attach precheck:");
+                for (String warning : precheck.getWarnings()) {
+                    System.err.println("  - " + warning);
+                }
+            }
+        }
+
         try {
             // 尝试使用 Attach API
             String connectorAddress = getConnectorAddress(pid);
@@ -52,7 +72,22 @@ public class JmxClient {
 
             return new JmxClient(conn, memoryBean);
         } catch (Exception e) {
-            throw new AnalysisException("Failed to attach to PID " + pid, e);
+            String message = String.format(
+                "Failed to attach to PID %s.%n" +
+                "  Possible causes:%n" +
+                "    - The process is not ready (state is not ready)%n" +
+                "    - You don't have permission to attach to this process%n" +
+                "    - The target JVM doesn't have JMX enabled%n" +
+                "    - You're using a JRE instead of a JDK%n" +
+                "%n" +
+                "  Troubleshooting steps:%n" +
+                "    1. Verify the PID is correct: jps -l%n" +
+                "    2. Ensure you're running as the same user as the target process%n" +
+                "    3. Check that you're using a JDK (not JRE)%n" +
+                "    4. On Linux, check ptrace_scope: cat /proc/sys/kernel/yama/ptrace_scope",
+                pid
+            );
+            throw new AnalysisException(message, e);
         }
     }
 

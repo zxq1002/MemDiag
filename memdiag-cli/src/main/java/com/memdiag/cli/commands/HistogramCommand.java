@@ -8,7 +8,7 @@ import com.memdiag.core.heap.JmxHeapAnalyzer;
 import com.memdiag.core.util.JmxClient;
 import picocli.CommandLine;
 
-@CommandLine.Command(name = "histogram", description = "Show heap histogram")
+@CommandLine.Command(name = "histogram", description = "Show heap histogram", mixinStandardHelpOptions = true)
 public class HistogramCommand extends BaseCommand {
 
     @CommandLine.Option(names = {"-l", "--limit"}, defaultValue = "20")

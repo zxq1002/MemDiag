@@ -1,6 +1,10 @@
 package com.memdiag.core.heap;
 
-public class ClassStats {
+import java.io.Serializable;
+
+public class ClassStats implements Serializable {
+    private static final long serialVersionUID = 1L;
+
     private final String className;
     private final long objectCount;
     private final long shallowBytes;

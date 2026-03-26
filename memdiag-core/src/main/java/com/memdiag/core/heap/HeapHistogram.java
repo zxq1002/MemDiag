@@ -1,11 +1,21 @@
 package com.memdiag.core.heap;
 
+import java.io.Serializable;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
 
-public class HeapHistogram {
+public class HeapHistogram implements Serializable {
+    private static final long serialVersionUID = 1L;
+
     private final List<ClassStats> classStats = new ArrayList<>();
+
+    public HeapHistogram() {
+    }
+
+    public HeapHistogram(List<ClassStats> stats) {
+        this.classStats.addAll(stats);
+    }
 
     public void add(ClassStats stats) {
         classStats.add(stats);

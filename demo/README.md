@@ -1,0 +1,80 @@
+# MemDiag Simulator - 全场景验证 Demo 使用说明
+
+本 Demo 旨在提供一个标准化的 **Linux 运行环境**，用于验证 MemDiag 工具在处理各类极端内存场景时的准确性与安全性。
+
+## 1. 模拟器核心功能
+
+`MemDiagDemo.java` 是一个高度可配置的 Java 程序，支持以下四种模拟模式：
+
+| 模式 (`mode`) | 说明 | 模拟故障 |
+| :--- | :--- | :--- |
+| `heap-leak` | 持续分配 `byte[]` 对象并持有引用。 | **堆内存缓慢增长溢出 (OOM)** |
+| `heap-high` | 一次性分配大块堆内存并保持。 | **堆内存不足 (非溢出高水位)** |
+| `native-leak` | 通过 `sun.misc.Unsafe` 持续申请原生内存。 | **堆外内存溢出 (C 层泄露)** |
+| `native-high` | 分配大块 `DirectByteBuffer` 并保持。 | **堆外内存占用过高** |
+
+---
+
+## 2. 环境准备与启动
+
+### 2.1 一键启动 (Docker)
+我们提供了 `demo/start-uat.sh` 脚本，支持通过命令行参数直接指定模拟场景：
+
+```bash
+# 基本用法
+# ./demo/start-uat.sh [mode] [limit_mb] [rate_mb_per_sec]
+
+# 示例 1: 默认启动 (heap-leak, 500MB, 10MB/s)
+bash demo/start-uat.sh
+
+# 示例 2: 模拟堆外内存泄露 (800MB 上限, 20MB/s 增长)
+bash demo/start-uat.sh native-leak 800 20
+
+# 示例 3: 模拟堆内存高水位 (非泄露, 900MB)
+bash demo/start-uat.sh heap-high 900
+```
+
+---
+
+## 3. 实战验证指南
+
+启动容器后，打开另一个终端进入容器：
+```bash
+docker exec -it memdiag-uat bash
+```
+
+### 场景 A：验证堆内存泄露 (`heap-leak`)
+1. **执行快照 1**：`java -jar memdiag-cli.jar snapshot <PID> --save=s1.bin`
+2. **等待 10 秒**。
+3. **执行快照 2**：`java -jar memdiag-cli.jar snapshot <PID> --save=s2.bin`
+4. **对比分析**：`java -jar memdiag-cli.jar diff <PID> --baseline=s1.bin`
+   *   **验收标准**：必须看到 `byte[]` 类的增长率处于 Top 1。
+
+### 场景 B：验证堆外内存监控 (`native-leak`)
+1. **查看概览**：`java -jar memdiag-cli.jar native <PID> --summary`
+   *   **验收标准**：`Total Resident` (RSS) 应远大于堆内存大小。
+2. **定位泄露点**：
+   *   挂载：`java -jar memdiag-cli.jar native <PID> --attach`
+   *   追踪：`java -jar memdiag-cli.jar native <PID> --start-trace`
+   *   查看：`java -jar memdiag-cli.jar native <PID> --allocation-sites`
+   *   **验收标准**：应能识别出 `Unsafe.allocateMemory` 产生的分配点。
+
+### 场景 C：验证自动诊断建议 (`heap-high`)
+1. **运行诊断**：`java -jar memdiag-cli.jar diagnose <PID>`
+   *   **验收标准**：系统应输出 `CRITICAL` 或 `WARNING` 级别的报告，并给出“增加堆内存”或“排查大对象”的建议。
+
+---
+
+## 4. 关键技术细节 (专家提示)
+
+1.  **权限要求**：Docker 启动时必须带有 `--cap-add=SYS_PTRACE` 参数，否则 JVM 的 Attach API 将无法连接到目标进程。
+2.  **资源限制**：模拟器默认在 Docker 内受到 `JAVA_OPTS="-Xmx1G"` 的限制。如果模拟 `limit` 超过 1024MB，程序将触发真实的 `java.lang.OutOfMemoryError`。
+3.  **安全验证**：在执行 `native --detach` 后，观察模拟器日志，确保其仍在正常输出（证明字节码插桩已安全剥离）。
+
+---
+
+## 5. 故障排查
+
+*   **无法 Attach**：检查 PID 是否正确。容器内使用 `ps -ef` 或 `jps -l` 确认。
+*   **Native 模块加载失败**：确保已安装 `g++` 和 `cmake`（Dockerfile 已包含）。
+*   **找不到 JAR 包**：确保在运行 `start-uat.sh` 之前已经执行过 `mvn clean package`。

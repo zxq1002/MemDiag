@@ -16,6 +16,16 @@ public interface NativeMemoryAnalyzer {
 
     boolean detachAgent();
 
+    boolean startAllocationTracking();
+
+    boolean stopAllocationTracking();
+
+    boolean isTrackingEnabled();
+
+    long getTotalAllocated();
+
+    long getLiveBytes();
+
     NativeMemorySummary getSummary();
 
     List<MemoryRegion> getMemoryRegions();

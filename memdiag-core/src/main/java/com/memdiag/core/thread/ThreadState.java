@@ -1,6 +1,8 @@
 package com.memdiag.core.thread;
 
-public enum ThreadState {
+import java.io.Serializable;
+
+public enum ThreadState implements Serializable {
     NEW,
     RUNNABLE,
     BLOCKED,

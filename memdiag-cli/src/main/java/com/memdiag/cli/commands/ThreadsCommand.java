@@ -14,7 +14,7 @@ import java.util.Comparator;
 import java.util.List;
 import java.util.Map;
 
-@CommandLine.Command(name = "threads", description = "Show thread analysis")
+@CommandLine.Command(name = "threads", description = "Show thread analysis", mixinStandardHelpOptions = true)
 public class ThreadsCommand extends BaseCommand {
 
     @CommandLine.Option(names = {"-l", "--limit"}, defaultValue = "20")

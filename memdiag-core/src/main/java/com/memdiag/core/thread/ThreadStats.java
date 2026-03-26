@@ -1,14 +1,30 @@
 package com.memdiag.core.thread;
 
-public class ThreadStats {
-    private final long threadId;
-    private final String threadName;
-    private final ThreadState state;
-    private final long blockedCount;
-    private final long blockedTime;
-    private final long waitedCount;
-    private final long waitedTime;
-    private final long allocatedBytes;
+import java.io.Serializable;
+import java.util.ArrayList;
+import java.util.List;
+
+public class ThreadStats implements Serializable {
+    private static final long serialVersionUID = 1L;
+
+    private long threadId;
+    private String threadName;
+    private ThreadState state;
+    private List<StackFrame> stackTrace = new ArrayList<>();
+    private long blockedCount;
+    private long blockedTime;
+    private long waitedCount;
+    private long waitedTime;
+    private long allocatedBytes;
+
+    public ThreadStats() {
+    }
+
+    public ThreadStats(long threadId, String threadName, ThreadState state) {
+        this.threadId = threadId;
+        this.threadName = threadName;
+        this.state = state;
+    }
 
     private ThreadStats(Builder builder) {
         this.threadId = builder.threadId;
@@ -19,38 +35,81 @@ public class ThreadStats {
         this.waitedCount = builder.waitedCount;
         this.waitedTime = builder.waitedTime;
         this.allocatedBytes = builder.allocatedBytes;
+        if (builder.stackTrace != null) {
+            this.stackTrace = new ArrayList<>(builder.stackTrace);
+        }
     }
 
     public long getThreadId() {
         return threadId;
     }
 
+    public void setThreadId(long threadId) {
+        this.threadId = threadId;
+    }
+
     public String getThreadName() {
         return threadName;
+    }
+
+    public void setThreadName(String threadName) {
+        this.threadName = threadName;
     }
 
     public ThreadState getState() {
         return state;
     }
 
+    public void setState(ThreadState state) {
+        this.state = state;
+    }
+
+    public List<StackFrame> getStackTrace() {
+        return stackTrace;
+    }
+
+    public void setStackTrace(List<StackFrame> stackTrace) {
+        this.stackTrace = stackTrace;
+    }
+
     public long getBlockedCount() {
         return blockedCount;
+    }
+
+    public void setBlockedCount(long blockedCount) {
+        this.blockedCount = blockedCount;
     }
 
     public long getBlockedTime() {
         return blockedTime;
     }
 
+    public void setBlockedTime(long blockedTime) {
+        this.blockedTime = blockedTime;
+    }
+
     public long getWaitedCount() {
         return waitedCount;
+    }
+
+    public void setWaitedCount(long waitedCount) {
+        this.waitedCount = waitedCount;
     }
 
     public long getWaitedTime() {
         return waitedTime;
     }
 
+    public void setWaitedTime(long waitedTime) {
+        this.waitedTime = waitedTime;
+    }
+
     public long getAllocatedBytes() {
         return allocatedBytes;
+    }
+
+    public void setAllocatedBytes(long allocatedBytes) {
+        this.allocatedBytes = allocatedBytes;
     }
 
     public static Builder builder() {
@@ -70,6 +129,7 @@ public class ThreadStats {
         private long threadId;
         private String threadName;
         private ThreadState state = ThreadState.UNKNOWN;
+        private List<StackFrame> stackTrace;
         private long blockedCount;
         private long blockedTime;
         private long waitedCount;
@@ -88,6 +148,11 @@ public class ThreadStats {
 
         public Builder state(ThreadState state) {
             this.state = state;
+            return this;
+        }
+
+        public Builder stackTrace(List<StackFrame> stackTrace) {
+            this.stackTrace = stackTrace;
             return this;
         }
 

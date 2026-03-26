@@ -1,5 +1,6 @@
 package com.memdiag.core.thread;
 
+import java.io.Serializable;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.Collections;
@@ -7,37 +8,71 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
-public class ThreadDump {
-    private final Instant timestamp;
-    private final Map<Long, ThreadInfo> threadInfos;
+public class ThreadDump implements Serializable {
+    private static final long serialVersionUID = 1L;
 
-    private ThreadDump(Instant timestamp, Map<Long, ThreadInfo> threadInfos) {
-        this.timestamp = timestamp;
-        this.threadInfos = Collections.unmodifiableMap(new HashMap<>(threadInfos));
+    private Instant timestamp;
+    private List<ThreadStats> threadStats = new ArrayList<>();
+
+    public ThreadDump() {
     }
 
-    public static ThreadDump create(Instant timestamp, Map<Long, ThreadInfo> threadInfos) {
-        return new ThreadDump(timestamp, threadInfos);
+    private ThreadDump(Instant timestamp, List<ThreadStats> threadStats) {
+        this.timestamp = timestamp;
+        this.threadStats = Collections.unmodifiableList(new ArrayList<>(threadStats));
+    }
+
+    public static ThreadDump create(Instant timestamp, List<ThreadStats> threadStats) {
+        return new ThreadDump(timestamp, threadStats);
     }
 
     public Instant getTimestamp() {
         return timestamp;
     }
 
+    public void setTimestamp(Instant timestamp) {
+        this.timestamp = timestamp;
+    }
+
+    public List<ThreadStats> getThreadStats() {
+        return threadStats;
+    }
+
+    public void setThreadStats(List<ThreadStats> threadStats) {
+        this.threadStats = threadStats;
+    }
+
+    public void addThreadStats(ThreadStats stats) {
+        this.threadStats.add(stats);
+    }
+
+    @Deprecated
     public Map<Long, ThreadInfo> getThreadInfos() {
-        return threadInfos;
+        Map<Long, ThreadInfo> infos = new HashMap<>();
+        for (ThreadStats stats : threadStats) {
+            ThreadInfo.Builder builder = ThreadInfo.builder()
+                .stats(stats);
+            if (stats.getStackTrace() != null) {
+                builder.stackTrace(stats.getStackTrace());
+            }
+            infos.put(stats.getThreadId(), builder.build());
+        }
+        return Collections.unmodifiableMap(infos);
     }
 
+    @Deprecated
     public ThreadInfo getThreadInfo(long threadId) {
-        return threadInfos.get(threadId);
+        return getThreadInfos().get(threadId);
     }
 
+    @Deprecated
     public int getThreadCount() {
-        return threadInfos.size();
+        return threadStats.size();
     }
 
+    @Deprecated
     public List<ThreadInfo> getThreadsByState(ThreadState state) {
-        return threadInfos.values().stream()
+        return getThreadInfos().values().stream()
             .filter(info -> info.getStats().getState() == state)
             .toList();
     }
@@ -46,10 +81,11 @@ public class ThreadDump {
     public String toString() {
         return "ThreadDump{" +
             "timestamp=" + timestamp +
-            ", threadCount=" + threadInfos.size() +
+            ", threadCount=" + threadStats.size() +
             '}';
     }
 
+    @Deprecated
     public static class ThreadInfo {
         private final ThreadStats stats;
         private final List<StackFrame> stackTrace;

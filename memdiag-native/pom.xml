@@ -1,0 +1,86 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project xmlns="http://maven.apache.org/POM/4.0.0"
+         xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+         xsi:schemaLocation="http://maven.apache.org/POM/4.0.0 http://maven.apache.org/xsd/maven-4.0.0.xsd">
+    <modelVersion>4.0.0</modelVersion>
+
+    <parent>
+        <groupId>com.memdiag</groupId>
+        <artifactId>memdiag-parent</artifactId>
+        <version>1.0.0-SNAPSHOT</version>
+    </parent>
+
+    <artifactId>memdiag-native</artifactId>
+    <name>MemDiag Native</name>
+    <description>Native extensions for Linux (JVMTI Agent)</description>
+
+    <properties>
+        <!-- Skip C++ compilation by default for cross-platform compatibility -->
+        <compile.native>false</compile.native>
+    </properties>
+
+    <dependencies>
+        <dependency>
+            <groupId>com.memdiag</groupId>
+            <artifactId>memdiag-core</artifactId>
+            <version>${project.version}</version>
+        </dependency>
+        <dependency>
+            <groupId>org.junit.jupiter</groupId>
+            <artifactId>junit-jupiter</artifactId>
+            <scope>test</scope>
+        </dependency>
+    </dependencies>
+
+    <profiles>
+        <!-- Profile for Linux - compiles JVMTI Agent -->
+        <profile>
+            <id>linux-native</id>
+            <activation>
+                <os>
+                    <family>unix</family>
+                    <name>Linux</name>
+                </os>
+                <property>
+                    <name>compile.native</name>
+                    <value>true</value>
+                </property>
+            </activation>
+            <build>
+                <plugins>
+                    <!-- Use exec-maven-plugin to compile C++ code -->
+                    <plugin>
+                        <groupId>org.codehaus.mojo</groupId>
+                        <artifactId>exec-maven-plugin</artifactId>
+                        <version>3.1.0</version>
+                        <executions>
+                            <execution>
+                                <id>compile-jvmt-agent</id>
+                                <phase>compile</phase>
+                                <goals>
+                                    <goal>exec</goal>
+                                </goals>
+                                <configuration>
+                                    <executable>sh</executable>
+                                    <arguments>
+                                        <argument>-c</argument>
+                                        <argument>
+                                            mkdir -p ${project.build.directory}/native &amp;&amp;
+                                            g++ -std=c++17 -fPIC -shared -I${java.home}/../include -I${java.home}/../include/linux
+                                            -o ${project.build.directory}/native/libmemdiag-agent.so
+                                            ${project.basedir}/src/main/c/jvmti/agent.cpp
+                                            ${project.basedir}/src/main/c/jvmti/class_transformer.cpp
+                                            ${project.basedir}/src/main/c/jvmti/allocation_tracker.cpp
+                                            ${project.basedir}/src/main/c/linux/proc_parser.cpp
+                                            -lpthread -ldl
+                                        </argument>
+                                    </arguments>
+                                </configuration>
+                            </execution>
+                        </executions>
+                    </plugin>
+                </plugins>
+            </build>
+        </profile>
+    </profiles>
+</project>

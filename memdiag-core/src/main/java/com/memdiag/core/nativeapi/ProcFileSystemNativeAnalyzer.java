@@ -73,6 +73,31 @@ public class ProcFileSystemNativeAnalyzer implements NativeMemoryAnalyzer {
     }
 
     @Override
+    public boolean startAllocationTracking() {
+        return false;
+    }
+
+    @Override
+    public boolean stopAllocationTracking() {
+        return false;
+    }
+
+    @Override
+    public boolean isTrackingEnabled() {
+        return false;
+    }
+
+    @Override
+    public long getTotalAllocated() {
+        return 0;
+    }
+
+    @Override
+    public long getLiveBytes() {
+        return 0;
+    }
+
+    @Override
     public NativeMemorySummary getSummary() {
         List<MemoryRegion> regions = getMemoryRegions();
         long totalResident = 0;
@@ -247,29 +272,14 @@ public class ProcFileSystemNativeAnalyzer implements NativeMemoryAnalyzer {
 
     @Override
     public NativeDiagnosis analyzeNativeLeaks() {
-        NativeDiagnosis.Builder builder = NativeDiagnosis.builder();
-
         if (!isAvailable()) {
+            NativeDiagnosis.Builder builder = NativeDiagnosis.builder();
             builder.addWarning("Proc filesystem not available - not a Linux system or /proc not mounted");
             builder.addRecommendation("Run on a Linux system with /proc filesystem mounted");
             return builder.build();
         }
 
-        List<MemoryRegion> regions = getMemoryRegions();
-        if (regions.isEmpty()) {
-            builder.addWarning("No memory regions found");
-            return builder.build();
-        }
-
-        long totalRss = regions.stream().mapToLong(MemoryRegion::getResidentSize).sum();
-        long totalSize = regions.stream().mapToLong(MemoryRegion::getSize).sum();
-
-        builder.addFinding(String.format("Total virtual memory: %,d bytes (%.2f MB)",
-            totalSize, totalSize / (1024.0 * 1024.0)));
-        builder.addFinding(String.format("Total resident memory: %,d bytes (%.2f MB)",
-            totalRss, totalRss / (1024.0 * 1024.0)));
-        builder.addFinding(String.format("Number of memory regions: %d", regions.size()));
-
-        return builder.build();
+        NativeDiagnosisEngine engine = new NativeDiagnosisEngine(this);
+        return engine.analyze();
     }
 }

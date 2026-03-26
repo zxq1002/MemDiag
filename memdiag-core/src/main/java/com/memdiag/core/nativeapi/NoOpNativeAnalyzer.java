@@ -36,6 +36,31 @@ public class NoOpNativeAnalyzer implements NativeMemoryAnalyzer {
     }
 
     @Override
+    public boolean startAllocationTracking() {
+        return false;
+    }
+
+    @Override
+    public boolean stopAllocationTracking() {
+        return false;
+    }
+
+    @Override
+    public boolean isTrackingEnabled() {
+        return false;
+    }
+
+    @Override
+    public long getTotalAllocated() {
+        return 0;
+    }
+
+    @Override
+    public long getLiveBytes() {
+        return 0;
+    }
+
+    @Override
     public NativeMemorySummary getSummary() {
         return NativeMemorySummary.builder()
             .totalResident(0)

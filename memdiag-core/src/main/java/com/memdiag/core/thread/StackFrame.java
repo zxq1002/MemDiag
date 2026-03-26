@@ -1,11 +1,26 @@
 package com.memdiag.core.thread;
 
-public class StackFrame {
-    private final String className;
-    private final String methodName;
-    private final String fileName;
-    private final int lineNumber;
-    private final boolean nativeMethod;
+import java.io.Serializable;
+
+public class StackFrame implements Serializable {
+    private static final long serialVersionUID = 1L;
+
+    private String className;
+    private String methodName;
+    private String fileName;
+    private int lineNumber;
+    private boolean nativeMethod;
+
+    public StackFrame() {
+    }
+
+    public StackFrame(String className, String methodName, String fileName, int lineNumber) {
+        this.className = className;
+        this.methodName = methodName;
+        this.fileName = fileName;
+        this.lineNumber = lineNumber;
+        this.nativeMethod = false;
+    }
 
     public StackFrame(String className, String methodName, String fileName, int lineNumber, boolean nativeMethod) {
         this.className = className;
@@ -19,20 +34,40 @@ public class StackFrame {
         return className;
     }
 
+    public void setClassName(String className) {
+        this.className = className;
+    }
+
     public String getMethodName() {
         return methodName;
+    }
+
+    public void setMethodName(String methodName) {
+        this.methodName = methodName;
     }
 
     public String getFileName() {
         return fileName;
     }
 
+    public void setFileName(String fileName) {
+        this.fileName = fileName;
+    }
+
     public int getLineNumber() {
         return lineNumber;
     }
 
+    public void setLineNumber(int lineNumber) {
+        this.lineNumber = lineNumber;
+    }
+
     public boolean isNativeMethod() {
         return nativeMethod;
+    }
+
+    public void setNativeMethod(boolean nativeMethod) {
+        this.nativeMethod = nativeMethod;
     }
 
     @Override

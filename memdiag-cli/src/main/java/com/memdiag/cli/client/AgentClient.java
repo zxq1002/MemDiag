@@ -32,6 +32,10 @@ public class AgentClient {
         return gson.fromJson(response, HeapHistogram.class);
     }
 
+    public HeapHistogram getHistogram(int limit) throws IOException {
+        return getHeapHistogram(limit);
+    }
+
     public ThreadDump getThreadDump() throws IOException {
         String response = get("/api/threads");
         return gson.fromJson(response, ThreadDump.class);
