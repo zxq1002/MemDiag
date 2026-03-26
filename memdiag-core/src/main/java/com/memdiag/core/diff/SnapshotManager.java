@@ -125,11 +125,16 @@ public class SnapshotManager {
             return withExt;
         }
 
-        // Try matching by ID prefix
+        // Try matching by ID prefix (both direct and with "snapshot-" prefix)
         try (Stream<Path> paths = Files.list(snapshotDir)) {
             return paths
-                .filter(p -> p.getFileName().toString().startsWith(idOrFilename))
                 .filter(p -> p.getFileName().toString().endsWith(SNAPSHOT_EXT))
+                .filter(p -> {
+                    String filename = p.getFileName().toString();
+                    // Match: test1, snapshot-test1-..., etc.
+                    return filename.startsWith(idOrFilename) ||
+                           filename.startsWith("snapshot-" + idOrFilename + "-");
+                })
                 .findFirst()
                 .orElse(null);
         } catch (IOException e) {
