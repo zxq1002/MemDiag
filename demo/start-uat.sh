@@ -19,7 +19,7 @@ mvn clean package -DskipTests -q
 
 # Build Docker image
 echo "Step 2: Building Docker image..."
-docker build -t memdiag-demo -f demo/Dockerfile .
+docker build -t memdiag-uat -f demo/Dockerfile .
 
 # Start container
 echo "Step 3: Starting container in $MODE mode (Limit: ${LIMIT}MB, Rate: ${RATE}MB/s)..."
@@ -30,4 +30,4 @@ echo "----------------------------------------------------------"
 
 docker run --name memdiag-uat --rm \
     --cap-add=SYS_PTRACE \
-    memdiag-demo "$MODE" "$LIMIT" "$RATE"
+    memdiag-uat "$MODE" "$LIMIT" "$RATE"

@@ -114,13 +114,16 @@ bash demo/start-test-suite.sh
 如果需要在容器内手动运行测试：
 
 ```bash
-# 1. 启动测试容器（后台模式）
-docker run -d --name memdiag-test --cap-add=SYS_PTRACE memdiag-test tail -f /dev/null
+# 1. 构建测试镜像
+docker build -t memdiag-test -f demo/Dockerfile.test .
 
-# 2. 进入容器
-docker exec -it memdiag-test bash
+# 2. 启动测试容器（后台模式）
+docker run -d --name memdiag-test-container --cap-add=SYS_PTRACE memdiag-test tail -f /dev/null
 
-# 3. 运行测试
+# 3. 进入容器
+docker exec -it memdiag-test-container bash
+
+# 4. 运行测试
 /app/test-full-suite.sh
 ```
 
