@@ -1022,6 +1022,156 @@ memdiag nmt --pid 12345
 
 ---
 
+## libmemdiag-agent.so 原生库使用说明
+
+### 什么是 libmemdiag-agent.so
+
+`libmemdiag-agent.so` 是 MemDiag 的 JVMTI（JVM Tool Interface）原生代理库，使用 C++ 实现，提供以下高级功能：
+
+| 功能 | 需要 libmemdiag-agent.so | 说明 |
+|-----|-------------------------|------|
+| `native --status` | ❌ 不需要 | 仅解析 /proc 文件系统 |
+| `native --summary` | ❌ 不需要 | 仅解析 /proc 文件系统 |
+| `native --regions` | ❌ 不需要 | 仅解析 /proc 文件系统 |
+| `native --diagnose` | ❌ 不需要 | 仅解析 /proc 文件系统 |
+| `native --attach` | ✅ **必需** | 动态挂载 JVMTI Agent |
+| `native --detach` | ✅ **必需** | 卸载 JVMTI Agent |
+| `native --start-trace` | ✅ **必需** | 启动堆外分配追踪 |
+| `native --stop-trace` | ✅ **必需** | 停止堆外分配追踪 |
+| `native --allocation-sites` | ✅ **必需** | 显示分配点统计 |
+
+### 什么时候需要自行编译
+
+**预编译版本已包含在发布包中**，以下情况需要自行编译：
+
+1. **使用的 Linux 发行版与预编译版本不兼容**
+   - 预编译版本在 Ubuntu 20.04 (gcc 10) 上构建
+   - 如果使用其他发行版（CentOS, Debian, Alpine 等）可能需要重新编译
+
+2. **修改了 C++ 源代码**
+   - `memdiag-native/src/main/c/` 目录下的任何文件修改
+
+3. **需要自定义编译选项**
+   - 调整优化级别
+   - 添加调试符号
+   - 自定义平台特定选项
+
+4. **在不同架构上运行**
+   - 预编译版本仅支持 x86_64 (amd64)
+   - ARM64 等其他架构需要重新编译
+
+### 编译方法
+
+#### 方法一：使用 Docker 编译（推荐）
+
+项目提供了完整的 Docker 编译脚本，无需在本地安装编译工具链：
+
+```bash
+# 使用项目提供的编译脚本
+bash demo/build-final.sh
+```
+
+该脚本会：
+1. 启动 gcc:10 容器（兼容大多数 Linux 发行版）
+2. 安装 JDK 11
+3. 编译 `libmemdiag-agent.so`
+4. 自动复制到以下位置：
+   - `memdiag-native/src/main/resources/libmemdiag-agent.so`
+   - `memdiag-cli/src/main/resources/libmemdiag-agent.so`
+
+#### 方法二：手动在 Linux 环境编译
+
+如果您有 Linux 环境，可以手动编译：
+
+```bash
+# 进入项目根目录
+cd MemDiag
+
+# 创建输出目录
+mkdir -p memdiag-native/target/native
+
+# 查找 JAVA_HOME
+export JAVA_HOME=$(readlink -f /usr/bin/java | sed "s:bin/java::")
+
+# 编译
+g++ -std=c++17 -fPIC -shared \
+    -I"$JAVA_HOME/include" \
+    -I"$JAVA_HOME/include/linux" \
+    -I"memdiag-native/src/main/c" \
+    -I"memdiag-native/src/main/c/jvmti" \
+    -I"memdiag-native/src/main/c/shared" \
+    -I"memdiag-native/src/main/c/linux" \
+    -o memdiag-native/target/native/libmemdiag-agent.so \
+    memdiag-native/src/main/c/jvmti/agent.cpp \
+    memdiag-native/src/main/c/jvmti/class_transformer.cpp \
+    memdiag-native/src/main/c/jvmti/allocation_tracker.cpp \
+    memdiag-native/src/main/c/linux/proc_parser.cpp \
+    memdiag-native/src/main/c/shared/symbol_cache.cpp \
+    -lpthread -ldl
+
+# 复制到 resources 目录
+cp memdiag-native/target/native/libmemdiag-agent.so memdiag-native/src/main/resources/
+cp memdiag-native/target/native/libmemdiag-agent.so memdiag-cli/src/main/resources/
+```
+
+### 编译注意事项
+
+#### 1. JDK 版本要求
+- 编译时需要 JDK 11 或更高版本（不是 JRE）
+- 确保 `$JAVA_HOME/include` 和 `$JAVA_HOME/include/linux` 目录存在
+
+#### 2. GCC 版本要求
+- 需要 GCC 7 或更高版本（支持 C++17）
+- 推荐使用 GCC 10 以获得最佳兼容性
+
+#### 3. 平台兼容性
+- 编译的 `.so` 文件只能在相同架构的 Linux 上运行
+- x86_64 编译的不能在 ARM64 上运行，反之亦然
+- libc 版本需要兼容（编译环境的 libc 版本 ≤ 运行环境的 libc 版本）
+
+#### 4. 运行时加载
+- MemDiag 会按以下顺序查找库：
+  1. Classpath 中的 `libmemdiag-agent.so`
+  2. `java.library.path` 指定的路径
+  3. 系统库路径（`/usr/lib`, `/usr/local/lib` 等）
+
+#### 5. 验证编译结果
+
+编译完成后，验证库文件是否可用：
+
+```bash
+# 检查文件是否存在
+ls -lh memdiag-cli/src/main/resources/libmemdiag-agent.so
+
+# 检查文件类型（应显示 ELF 64-bit LSB shared object）
+file memdiag-cli/src/main/resources/libmemdiag-agent.so
+
+# 检查依赖库
+ldd memdiag-cli/src/main/resources/libmemdiag-agent.so
+```
+
+### 故障排除
+
+#### 问题：编译时找不到 jni.h
+```
+fatal error: jni.h: No such file or directory
+```
+**解决方案**：确认 `JAVA_HOME` 环境变量正确指向 JDK 目录，且包含 `include` 子目录。
+
+#### 问题：运行时提示 "JVMTI agent is not available"
+**解决方案**：
+1. 确认 `libmemdiag-agent.so` 在 classpath 中
+2. 检查文件权限（需要可读权限）
+3. 确认平台架构匹配
+
+#### 问题：编译的库在目标机器上无法加载
+```
+java.lang.UnsatisfiedLinkError: /path/to/libmemdiag-agent.so: /lib/x86_64-linux-gnu/libc.so.6: version `GLIBC_2.32' not found
+```
+**解决方案**：在与目标机器 GLIBC 版本相同或更低的环境中重新编译。使用项目提供的 Docker 编译脚本（gcc:10 基于 Debian Buster，GLIBC 2.28，兼容性较好）。
+
+---
+
 ## 高级配置
 
 ### 配置文件
