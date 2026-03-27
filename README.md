@@ -357,6 +357,16 @@ Analysis complete: 0 critical, 0 warning, 0 info issues found. Heap: 55,312,816 
 - **INFO ISSUES**: 信息提示（绿色）
 - **RECOMMENDATIONS**: 优化建议
 
+#### 内置诊断规则
+
+| 规则类型 | 阈值 | 严重程度 | 说明 |
+|---------|------|----------|------|
+| **LARGE_CLASS** | 单个类占用 > 100MB | WARNING | 检测占用过大内存的类 |
+| **MANY_INSTANCES** | 单个类实例数 > 100,000 | INFO | 检测实例数过多的类 |
+| **MANY_BLOCKED_THREADS** | BLOCKED 线程 > 10 个 | CRITICAL | 检测大量阻塞线程（可能死锁） |
+| **LARGE_COLLECTION** | 集合类实例数 > 50,000 | INFO | 检测大量使用的集合（List/Map/Set） |
+| **HEAP_LEAK_SUSPECT** | 复合条件 | WARNING | 堆内存泄漏嫌疑检测（高实例数+大内存、堆占比>20%、缓存/集合异常） |
+
 #### 实现原理
 
 `DiagnoseCommand` 使用 `DiagnosisEngine` 整合多个分析器：
@@ -366,6 +376,59 @@ Analysis complete: 0 critical, 0 warning, 0 info issues found. Heap: 55,312,816 
 4. **配置检查**: 验证堆大小、GC 策略等配置
 
 诊断引擎根据预定义的规则判断问题级别，并提供相应的建议。
+
+##### 规则可扩展性
+
+诊断引擎采用可扩展的插件架构：
+
+**内置规则（默认启用）：**
+- `LARGE_CLASS` - 检测 > 100MB 的类
+- `MANY_INSTANCES` - 检测 > 100,000 实例的类
+- `MANY_BLOCKED_THREADS` - 检测 > 10 个阻塞线程
+- `LARGE_COLLECTION` - 检测 > 50,000 实例的集合类
+- `HEAP_LEAK_SUSPECT` - 堆内存泄漏嫌疑检测
+
+**HEAP_LEAK_SUSPECT 检测指标：**
+- 高实例数（>50,000）+ 大内存占用（>50MB）
+- 单个类占用堆内存 > 20%
+- 缓存/缓冲类名 + 异常实例数
+- 大集合类（List/Map/Set）+ 异常实例数
+
+**添加自定义规则：**
+
+方式一：编程方式注册
+```java
+// 1. 实现 DiagnosisRule 接口
+public class MyCustomRule implements DiagnosisRule {
+    @Override
+    public String getId() { return "MY_RULE"; }
+
+    @Override
+    public List<Issue> evaluate(DiagnosisContext context) {
+        // 自定义检测逻辑
+    }
+}
+
+// 2. 注册到引擎
+RuleRegistry registry = new RuleRegistry();
+registry.registerDefaultRules();  // 保留内置规则
+registry.register(new MyCustomRule());
+
+// 3. 创建带自定义规则的引擎
+DiagnosisEngine engine = new DiagnosisEngine(
+    jmxClient, heapAnalyzer, threadAnalyzer, registry);
+```
+
+方式二：ServiceLoader 自动发现
+1. 实现 `DiagnosisRule` 接口
+2. 在 `META-INF/services/com.memdiag.core.diagnose.DiagnosisRule` 中添加实现类全名
+3. 调用 `registry.discoverRules()` 自动加载
+
+**规则上下文数据：**
+- `context.getHeapHistogram()` - 堆直方图
+- `context.getThreadDump()` - 线程转储
+- `context.getTotalHeapUsed()` - 已用堆内存
+- `context.getTotalHeapCommitted()` - 已提交堆内存
 
 ---
 

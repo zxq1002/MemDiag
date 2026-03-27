@@ -1,33 +1,74 @@
 package com.memdiag.core.diagnose;
 
-import com.memdiag.core.heap.ClassStats;
 import com.memdiag.core.heap.HeapAnalyzer;
 import com.memdiag.core.heap.HeapHistogram;
 import com.memdiag.core.thread.ThreadAnalyzer;
 import com.memdiag.core.thread.ThreadDump;
-import com.memdiag.core.thread.ThreadState;
-import com.memdiag.core.thread.ThreadStats;
 import com.memdiag.core.util.JmxClient;
 
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
 
+/**
+ * Extensible diagnosis engine that uses registered rules to identify issues.
+ * <p>
+ * This engine supports:
+ * <ul>
+ *   <li>Built-in default rules</li>
+ *   <li>Programmatic rule registration</li>
+ *   <li>ServiceLoader-based rule discovery</li>
+ *   <li>Custom rule implementations</li>
+ * </ul>
+ */
 public class DiagnosisEngine {
-    private static final long LARGE_OBJECT_THRESHOLD = 100 * 1024 * 1024; // 100MB
-    private static final double HIGH_GROWTH_RATE = 2.0;
-    private static final int MANY_BLOCKED_THREADS_THRESHOLD = 10;
 
     private final JmxClient jmxClient;
     private final HeapAnalyzer heapAnalyzer;
     private final ThreadAnalyzer threadAnalyzer;
+    private final RuleRegistry ruleRegistry;
 
+    /**
+     * Create a new DiagnosisEngine with the default rules.
+     *
+     * @param jmxClient JMX client for accessing JVM metrics
+     * @param heapAnalyzer heap analyzer for heap data
+     * @param threadAnalyzer thread analyzer for thread data
+     */
     public DiagnosisEngine(JmxClient jmxClient, HeapAnalyzer heapAnalyzer, ThreadAnalyzer threadAnalyzer) {
+        this(jmxClient, heapAnalyzer, threadAnalyzer, RuleRegistry.withDefaults());
+    }
+
+    /**
+     * Create a new DiagnosisEngine with a custom rule registry.
+     *
+     * @param jmxClient JMX client for accessing JVM metrics
+     * @param heapAnalyzer heap analyzer for heap data
+     * @param threadAnalyzer thread analyzer for thread data
+     * @param ruleRegistry registry of rules to use
+     */
+    public DiagnosisEngine(JmxClient jmxClient, HeapAnalyzer heapAnalyzer,
+                           ThreadAnalyzer threadAnalyzer, RuleRegistry ruleRegistry) {
         this.jmxClient = jmxClient;
         this.heapAnalyzer = heapAnalyzer;
         this.threadAnalyzer = threadAnalyzer;
+        this.ruleRegistry = ruleRegistry;
     }
 
+    /**
+     * Get the rule registry for this engine.
+     *
+     * @return the rule registry
+     */
+    public RuleRegistry getRuleRegistry() {
+        return ruleRegistry;
+    }
+
+    /**
+     * Run the diagnosis with all enabled rules.
+     *
+     * @return diagnosis result containing all found issues
+     */
     public DiagnosisResult analyze() {
         DiagnosisResult.Builder result = DiagnosisResult.builder()
             .timestamp(Instant.now());
@@ -37,15 +78,34 @@ public class DiagnosisEngine {
         try {
             HeapHistogram histogram = heapAnalyzer.getHistogram(100);
             ThreadDump threadDump = threadAnalyzer.getThreadDump();
+            long heapUsed = jmxClient.getHeapMemoryUsage().getUsed();
+            long heapCommitted = jmxClient.getHeapMemoryUsage().getCommitted();
 
-            result.totalHeapUsed(jmxClient.getHeapMemoryUsage().getUsed())
-                .totalHeapCommitted(jmxClient.getHeapMemoryUsage().getCommitted())
+            result.totalHeapUsed(heapUsed)
+                .totalHeapCommitted(heapCommitted)
                 .threadCount(threadDump.getThreadCount());
 
-            issues.addAll(checkLargeObjects(histogram));
-            issues.addAll(checkManyInstances(histogram));
-            issues.addAll(checkBlockedThreads(threadDump));
-            issues.addAll(checkCollectionClasses(histogram));
+            // Build context for rules
+            DiagnosisContext context = DiagnosisContext.builder()
+                .heapHistogram(histogram)
+                .threadDump(threadDump)
+                .totalHeapUsed(heapUsed)
+                .totalHeapCommitted(heapCommitted)
+                .build();
+
+            // Evaluate all enabled rules
+            for (DiagnosisRule rule : ruleRegistry.getEnabledRules()) {
+                try {
+                    issues.addAll(rule.evaluate(context));
+                } catch (Exception e) {
+                    issues.add(Issue.builder()
+                        .severity(Severity.WARNING)
+                        .type("RULE_ERROR")
+                        .title("Rule execution error: " + rule.getName())
+                        .description("Rule " + rule.getId() + " failed: " + e.getMessage())
+                        .build());
+                }
+            }
 
             String summary = generateSummary(issues, histogram, threadDump);
             result.summary(summary);
@@ -63,124 +123,18 @@ public class DiagnosisEngine {
         return result.build();
     }
 
-    private List<Issue> checkLargeObjects(HeapHistogram histogram) {
-        List<Issue> issues = new ArrayList<>();
-
-        for (ClassStats stats : histogram.getTopByShallowBytes(10)) {
-            if (stats.getShallowBytes() > LARGE_OBJECT_THRESHOLD) {
-                issues.add(Issue.builder()
-                    .severity(Severity.WARNING)
-                    .type("LARGE_CLASS")
-                    .title("Large memory usage by class: " + truncateClassName(stats.getClassName()))
-                    .description(String.format("Class %s uses %,d bytes across %,d instances",
-                        truncateClassName(stats.getClassName()),
-                        stats.getShallowBytes(),
-                        stats.getObjectCount()))
-                    .affectedClassName(stats.getClassName())
-                    .affectedObjectCount(stats.getObjectCount())
-                    .affectedBytes(stats.getShallowBytes())
-                    .addRecommendation(Recommendation.builder()
-                        .priority("HIGH")
-                        .title("Analyze object graph")
-                        .description("Use GC Root analysis to understand why these objects are being retained")
-                        .action("Run gc-roots command on this class")
-                        .build())
-                    .build());
-            }
-        }
-
-        return issues;
-    }
-
-    private List<Issue> checkManyInstances(HeapHistogram histogram) {
-        List<Issue> issues = new ArrayList<>();
-
-        for (ClassStats stats : histogram.getTopByObjectCount(10)) {
-            if (stats.getObjectCount() > 100000) {
-                issues.add(Issue.builder()
-                    .severity(Severity.INFO)
-                    .type("MANY_INSTANCES")
-                    .title("Many instances: " + truncateClassName(stats.getClassName()))
-                    .description(String.format("Class %s has %,d instances",
-                        truncateClassName(stats.getClassName()),
-                        stats.getObjectCount()))
-                    .affectedClassName(stats.getClassName())
-                    .affectedObjectCount(stats.getObjectCount())
-                    .affectedBytes(stats.getShallowBytes())
-                    .build());
-            }
-        }
-
-        return issues;
-    }
-
-    private List<Issue> checkBlockedThreads(ThreadDump threadDump) {
-        List<Issue> issues = new ArrayList<>();
-
-        List<ThreadDump.ThreadInfo> blockedThreads = threadDump.getThreadsByState(ThreadState.BLOCKED);
-        if (blockedThreads.size() > MANY_BLOCKED_THREADS_THRESHOLD) {
-            issues.add(Issue.builder()
-                .severity(Severity.CRITICAL)
-                .type("MANY_BLOCKED_THREADS")
-                .title("High number of blocked threads")
-                .description(String.format("There are %,d blocked threads", blockedThreads.size()))
-                .addRecommendation(Recommendation.builder()
-                    .priority("CRITICAL")
-                    .title("Check for deadlocks or lock contention")
-                    .description("Review thread stacks to identify bottlenecks")
-                    .action("Analyze thread dump for blocked threads")
-                    .build())
-                .build());
-        }
-
-        return issues;
-    }
-
-    private List<Issue> checkCollectionClasses(HeapHistogram histogram) {
-        List<Issue> issues = new ArrayList<>();
-
-        for (ClassStats stats : histogram.getClassStats()) {
-            String className = stats.getClassName();
-            if (isCollectionClass(className) && stats.getObjectCount() > 50000) {
-                issues.add(Issue.builder()
-                    .severity(Severity.INFO)
-                    .type("LARGE_COLLECTION")
-                    .title("Large collection usage: " + truncateClassName(className))
-                    .description(String.format("Collection %s has %,d instances totaling %,d bytes",
-                        truncateClassName(className),
-                        stats.getObjectCount(),
-                        stats.getShallowBytes()))
-                    .affectedClassName(className)
-                    .affectedObjectCount(stats.getObjectCount())
-                    .affectedBytes(stats.getShallowBytes())
-                    .build());
-            }
-        }
-
-        return issues;
-    }
-
-    private boolean isCollectionClass(String className) {
-        return className.startsWith("java.util.") &&
-            (className.contains("List") || className.contains("Map") ||
-                className.contains("Set") || className.contains("Collection"));
-    }
-
     private String generateSummary(List<Issue> issues, HeapHistogram histogram, ThreadDump threadDump) {
         long criticalCount = issues.stream().filter(i -> i.getSeverity() == Severity.CRITICAL).count();
         long warningCount = issues.stream().filter(i -> i.getSeverity() == Severity.WARNING).count();
         long infoCount = issues.stream().filter(i -> i.getSeverity() == Severity.INFO).count();
 
         return String.format("Analysis complete: %,d critical, %,d warning, %,d info issues found. " +
-                "Heap: %,d bytes used, %,d classes. Threads: %,d active.",
+                "Heap: %,d bytes used, %,d classes. Threads: %,d active. " +
+                "Rules executed: %d.",
             criticalCount, warningCount, infoCount,
             histogram.getTotalBytes(),
             histogram.getClassStats().size(),
-            threadDump.getThreadCount());
-    }
-
-    private String truncateClassName(String className) {
-        if (className.length() <= 40) return className;
-        return "..." + className.substring(className.length() - 37);
+            threadDump.getThreadCount(),
+            ruleRegistry.getEnabledRules().size());
     }
 }

@@ -1,0 +1,5 @@
+com.memdiag.core.diagnose.rules.LargeClassRule
+com.memdiag.core.diagnose.rules.ManyInstancesRule
+com.memdiag.core.diagnose.rules.BlockedThreadsRule
+com.memdiag.core.diagnose.rules.LargeCollectionRule
+com.memdiag.core.diagnose.rules.HeapLeakDetectionRule
