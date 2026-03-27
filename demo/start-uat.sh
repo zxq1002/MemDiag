@@ -17,11 +17,11 @@ fi
 echo "Step 1: Building project..."
 mvn clean package -DskipTests -q
 
-# Build Docker image
-echo "Step 2: Building Docker image..."
-docker build -t memdiag-uat -f demo/Dockerfile .
+# Build Docker image (force amd64 for compatibility with precompiled .so files)
+echo "Step 2: Building Docker image (linux/amd64)..."
+docker build --platform linux/amd64 -t memdiag-uat -f demo/Dockerfile .
 
-# Start container
+# Start container (force amd64 for compatibility with precompiled .so files)
 echo "Step 3: Starting container in $MODE mode (Limit: ${LIMIT}MB, Rate: ${RATE}MB/s)..."
 echo "----------------------------------------------------------"
 echo "To interact with the container, run in a new terminal:"
@@ -29,5 +29,6 @@ echo "  docker exec -it memdiag-uat bash"
 echo "----------------------------------------------------------"
 
 docker run --name memdiag-uat --rm \
+    --platform linux/amd64 \
     --cap-add=SYS_PTRACE \
     memdiag-uat "$MODE" "$LIMIT" "$RATE"

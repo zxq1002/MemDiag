@@ -21,8 +21,8 @@ echo "✅ 项目构建完成"
 echo ""
 
 # 第二步：构建 Docker 镜像
-echo "步骤 2: 构建测试 Docker 镜像..."
-docker build -t memdiag-test -f demo/Dockerfile.test .
+echo "步骤 2: 构建测试 Docker 镜像 (linux/amd64)..."
+docker build --platform linux/amd64 -t memdiag-test -f demo/Dockerfile.test .
 echo "✅ Docker 镜像构建完成"
 echo ""
 
@@ -32,6 +32,7 @@ echo ""
 
 # 复制测试脚本到容器并执行
 docker run --name memdiag-test-container --rm \
+    --platform linux/amd64 \
     --cap-add=SYS_PTRACE \
     -v "$(pwd)/demo/test-full-suite.sh:/app/test-full-suite.sh" \
     memdiag-test \
