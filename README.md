@@ -1060,9 +1060,23 @@ memdiag nmt --pid 12345
    - 预编译版本仅支持 x86_64 (amd64)
    - ARM64 等其他架构需要重新编译
 
+### 多架构支持
+
+MemDiag 原生库支持**多架构共存**，`NativeLoader` 会自动根据当前系统架构选择合适的库：
+
+| 架构 | 库文件名 | 状态 |
+|-----|---------|------|
+| **x86_64 / amd64** | `libmemdiag-agent-x86_64.so`<br>`libmemdiag-agent-amd64.so`<br>`libmemdiag-agent.so` | ✅ 预编译包含 |
+| **ARM64 / aarch64** | `libmemdiag-agent-arm64.so`<br>`libmemdiag-agent-aarch64.so` | ⚠️ 需自行编译 |
+
+加载优先级（从高到低）：
+1. 架构特定名称（`-x86_64.so` / `-arm64.so`）
+2. 通用名称（`libmemdiag-agent.so`）
+3. 系统库路径（`System.loadLibrary("memdiag-agent")`）
+
 ### 编译方法
 
-#### 方法一：使用 Docker 编译（推荐）
+#### 方法一：使用 Docker 编译 x86_64 版本（推荐）
 
 项目提供了完整的 Docker 编译脚本，无需在本地安装编译工具链：
 
@@ -1075,9 +1089,27 @@ bash demo/build-final.sh
 1. 启动 gcc:10 容器（兼容大多数 Linux 发行版）
 2. 安装 JDK 11
 3. 编译 `libmemdiag-agent.so`
-4. 自动复制到以下位置：
+4. 自动复制到以下位置（包含架构特定名称）：
    - `memdiag-native/src/main/resources/libmemdiag-agent.so`
+   - `memdiag-native/src/main/resources/libmemdiag-agent-x86_64.so`
+   - `memdiag-native/src/main/resources/libmemdiag-agent-amd64.so`
    - `memdiag-cli/src/main/resources/libmemdiag-agent.so`
+   - `memdiag-cli/src/main/resources/libmemdiag-agent-x86_64.so`
+   - `memdiag-cli/src/main/resources/libmemdiag-agent-amd64.so`
+
+#### 方法二：使用 Docker 编译 ARM64 版本
+
+如果需要在 ARM64 设备上使用 JVMTI 功能：
+
+```bash
+# 编译 ARM64 版本
+bash demo/build-arm64.sh
+```
+
+该脚本会：
+1. 启动 `linux/arm64` 平台的 gcc:10 容器
+2. 编译 `libmemdiag-agent-arm64.so`
+3. 自动复制到 resources 目录（同时创建 `-arm64.so` 和 `-aarch64.so` 两个命名）
 
 #### 方法二：手动在 Linux 环境编译
 
