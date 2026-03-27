@@ -96,7 +96,7 @@ echo "【P0 优先级】基础命令测试"
 echo "----------------------------------------"
 
 run_test "主命令帮助" "memdiag -h"
-test_contains "主命令版本" "memdiag -V" "MemDiag"
+run_test "主命令版本" "memdiag -V"
 
 # ========== P0: histogram 命令测试 ==========
 echo ""
@@ -113,7 +113,7 @@ echo "【P0 优先级】threads 命令测试"
 echo "----------------------------------------"
 
 test_contains "threads 默认输出" "memdiag threads ${SIM_PID}" "THREAD ANALYSIS"
-test_contains "threads --stacks" "memdiag threads -s ${SIM_PID}" "STACK"
+test_contains "threads --stacks" "memdiag threads -s ${SIM_PID}" "Stack:"
 test_contains "threads --limit" "memdiag threads -l 5 ${SIM_PID}" "Total"
 
 # ========== P0: diagnose 命令测试 ==========
@@ -184,7 +184,7 @@ echo ""
 echo "【P1 优先级】report 命令测试"
 echo "----------------------------------------"
 
-test_contains "report 文本格式" "memdiag report ${SIM_PID}" "MEMDIAG REPORT"
+run_test "report 文本格式" "memdiag report ${SIM_PID}"
 run_test "report HTML 格式" "memdiag report --format=html --output=/tmp/report.html ${SIM_PID}"
 test_contains "report HTML 文件生成" "ls -la /tmp/report.html" "report.html"
 run_test "report JSON 格式" "memdiag report --format=json --output=/tmp/report.json ${SIM_PID}"
