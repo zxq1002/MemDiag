@@ -132,6 +132,10 @@ docker exec -it memdiag-test bash
 2.  **资源限制**：模拟器默认在 Docker 内受到 `JAVA_OPTS="-Xmx1G"` 的限制。如果模拟 `limit` 超过 1024MB，程序将触发真实的 `java.lang.OutOfMemoryError`。
 3.  **安全验证**：在执行 `native --detach` 后，观察模拟器日志，确保其仍在正常输出（证明字节码插桩已安全剥离）。
 4.  **诊断规则**：当前内置 5 个诊断规则，包括新增的 `HEAP_LEAK_SUSPECT` 堆内存泄漏嫌疑检测。
+5.  **JVMTI 功能**：`native --attach`、`--start-trace` 等高级功能需要 `libmemdiag-agent.so` 原生库。该库需要在 Linux 环境下编译（可使用 Docker）。基础功能（`--status`、`--summary`、`--regions`、`--diagnose`）无需原生库即可使用。
+6.  **GC Root 分析**：`gc-roots` 命令目前支持基本统计功能。完整的引用链分析需要 JVMTI 原生库支持。
+7.  **Agent 模式**：已支持 Java Agent 模式，可通过 `-javaagent:memdiag-agent.jar` 启动时挂载，或动态挂载到运行中的 JVM。
+8.  **Web UI**：已提供完整的 Web 界面，包含 Spring Boot 后端和 Vue 3 前端，支持实时图表展示。
 
 ---
 
