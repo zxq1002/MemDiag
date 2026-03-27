@@ -1,0 +1,31 @@
+# 测试环境 Dockerfile
+FROM eclipse-temurin:17-jdk-focal
+
+# 安装必要的系统工具
+RUN apt-get update && apt-get install -y \
+    g++ \
+    cmake \
+    make \
+    procps \
+    python3 \
+    && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /app
+
+# 拷贝项目编译产物 (使用 shaded jar)
+COPY memdiag-cli/target/memdiag-cli-1.0.0-SNAPSHOT.jar /app/memdiag-cli.jar
+
+# 拷贝并编译 Demo
+COPY demo/MemDiagDemo.java /app/
+RUN javac MemDiagDemo.java
+
+# 预设默认 JVM 参数
+ENV JAVA_OPTS="-Xmx1G -Xms128M"
+
+# 创建 memdiag 快捷命令 (使用 shaded jar)
+RUN echo '#!/bin/bash' > /usr/local/bin/memdiag && \
+    echo 'java -jar /app/memdiag-cli.jar "$@"' >> /usr/local/bin/memdiag && \
+    chmod +x /usr/local/bin/memdiag
+
+# 简单的启动脚本，保持容器运行
+CMD ["tail", "-f", "/dev/null"]

@@ -109,10 +109,10 @@ public class HeapLeakDetectionRule extends AbstractDiagnosisRule {
 
     private Issue createLeakIssue(ClassStats stats, List<String> reasons, long totalHeapBytes) {
         StringBuilder desc = new StringBuilder();
-        desc.append(String.format("Class %s shows potential leak indicators:%n",
-            truncateClassName(stats.getClassName(), 50)));
+        desc.append("Class ").append(truncateClassName(stats.getClassName(), 50))
+            .append(" shows potential leak indicators:\n");
         for (String reason : reasons) {
-            desc.append("  - ").append(reason).append("%n");
+            desc.append("  - ").append(reason).append("\n");
         }
         desc.append(String.format("  Total: %,d instances, %,d bytes",
             stats.getObjectCount(), stats.getShallowBytes()));
@@ -125,7 +125,7 @@ public class HeapLeakDetectionRule extends AbstractDiagnosisRule {
             .severity(Severity.WARNING)
             .type(RULE_ID)
             .title("Potential memory leak suspect: " + truncateClassName(stats.getClassName(), 40))
-            .description(String.format(desc.toString()))
+            .description(desc.toString())
             .affectedClassName(stats.getClassName())
             .affectedObjectCount(stats.getObjectCount())
             .affectedBytes(stats.getShallowBytes())
