@@ -55,9 +55,9 @@ docker exec -it memdiag-uat bash
 ```
 
 ### 场景 A：验证堆内存泄露 (`heap-leak`)
-1. **执行快照 1**：`memdiag snapshot <PID> --save=s1`
+1. **执行快照 1**：`memdiag snapshot <PID> --save --id=s1`
 2. **等待 10 秒**。
-3. **执行快照 2**：`memdiag snapshot <PID> --save=s2`
+3. **执行快照 2**：`memdiag snapshot <PID> --save --id=s2`
 4. **对比分析**：`memdiag diff --baseline=s1 --current=s2`
    *   **验收标准**：必须看到 `byte[]` 类的增长率处于 Top 1。
 
@@ -129,7 +129,7 @@ docker exec -it memdiag-test bash
 ## 5. 关键技术细节 (专家提示)
 
 1.  **权限要求**：Docker 启动时必须带有 `--cap-add=SYS_PTRACE` 参数，否则 JVM 的 Attach API 将无法连接到目标进程。
-2.  **资源限制**：模拟器默认在 Docker 内受到 `JAVA_OPTS=”-Xmx1G”` 的限制。如果模拟 `limit` 超过 1024MB，程序将触发真实的 `java.lang.OutOfMemoryError`。
+2.  **资源限制**：模拟器默认在 Docker 内受到 `JAVA_OPTS="-Xmx1G"` 的限制。如果模拟 `limit` 超过 1024MB，程序将触发真实的 `java.lang.OutOfMemoryError`。
 3.  **安全验证**：在执行 `native --detach` 后，观察模拟器日志，确保其仍在正常输出（证明字节码插桩已安全剥离）。
 4.  **诊断规则**：当前内置 5 个诊断规则，包括新增的 `HEAP_LEAK_SUSPECT` 堆内存泄漏嫌疑检测。
 
