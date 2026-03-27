@@ -27,19 +27,19 @@ public class NativeCommand extends BaseCommand {
     @CommandLine.Option(names = {"--diagnose"}, description = "Run native leak diagnosis")
     private boolean diagnose;
 
-    @CommandLine.Option(names = {"--attach"}, description = "Attach native agent to target process")
+    @CommandLine.Option(names = {"--attach"}, description = "Attach native agent to target process (requires JVMTI)")
     private boolean attach;
 
-    @CommandLine.Option(names = {"--detach"}, description = "Detach native agent from target process")
+    @CommandLine.Option(names = {"--detach"}, description = "Detach native agent from target process (requires JVMTI)")
     private boolean detach;
 
-    @CommandLine.Option(names = {"--start-trace"}, description = "Start native allocation tracing")
+    @CommandLine.Option(names = {"--start-trace"}, description = "Start native allocation tracing (requires JVMTI)")
     private boolean startTrace;
 
-    @CommandLine.Option(names = {"--stop-trace"}, description = "Stop native allocation tracing")
+    @CommandLine.Option(names = {"--stop-trace"}, description = "Stop native allocation tracing (requires JVMTI)")
     private boolean stopTrace;
 
-    @CommandLine.Option(names = {"--allocation-sites"}, description = "Show top allocation sites (requires tracing)")
+    @CommandLine.Option(names = {"--allocation-sites"}, description = "Show top allocation sites (requires JVMTI tracing)")
     private boolean allocationSites;
 
     @CommandLine.Option(names = {"-l", "--limit"}, defaultValue = "20", description = "Limit for allocation sites output")
@@ -50,11 +50,22 @@ public class NativeCommand extends BaseCommand {
 
     @Override
     public void run() {
+        // Determine if we need JVMTI features
+        boolean requiresJVMTI = attach || detach || startTrace || stopTrace || allocationSites;
+
         NativeMemoryAnalyzer analyzer;
-        if (pid != null && !pid.isEmpty()) {
-            analyzer = NativeMemoryAnalyzerFactory.getInstance(pid);
+        if (requiresJVMTI) {
+            if (pid != null && !pid.isEmpty()) {
+                analyzer = NativeMemoryAnalyzerFactory.getInstanceWithJVMTI(pid);
+            } else {
+                analyzer = NativeMemoryAnalyzerFactory.getInstanceWithJVMTI();
+            }
         } else {
-            analyzer = NativeMemoryAnalyzerFactory.getInstance();
+            if (pid != null && !pid.isEmpty()) {
+                analyzer = NativeMemoryAnalyzerFactory.getInstance(pid);
+            } else {
+                analyzer = NativeMemoryAnalyzerFactory.getInstance();
+            }
         }
 
         if (status) {
@@ -87,11 +98,21 @@ public class NativeCommand extends BaseCommand {
         System.out.printf("Platform: %s%n", analyzer.getPlatform());
         System.out.printf("Requires Agent: %s%n", analyzer.requiresAgent() ? "Yes" : "No");
         System.out.printf("Agent Attached: %s%n", analyzer.isAgentAttached() ? "Yes" : "No");
+        System.out.printf("JVMTI Support: %s%n", isJVMTIAvailable(analyzer) ? "✅ Yes" : "❌ No (install libmemdiag-agent.so for advanced features)");
 
         if (!analyzer.isAvailable()) {
             System.out.println();
             System.out.println("NOTE: Native memory analysis requires Linux with /proc filesystem mounted.");
         }
+        if (!isJVMTIAvailable(analyzer)) {
+            System.out.println();
+            System.out.println("NOTE: JVMTI advanced features (--attach, --trace) require libmemdiag-agent.so.");
+            System.out.println("      Basic features (--status, --summary, --regions, --diagnose) are still available.");
+        }
+    }
+
+    private boolean isJVMTIAvailable(NativeMemoryAnalyzer analyzer) {
+        return analyzer.getClass().getName().contains("JVMTINativeAnalyzer");
     }
 
     private void printSummary(NativeMemoryAnalyzer analyzer) {
@@ -214,8 +235,13 @@ public class NativeCommand extends BaseCommand {
         System.out.println("ATTACHING NATIVE AGENT");
         System.out.println("==========================================================================");
 
-        if (!analyzer.requiresAgent()) {
-            System.out.println("Native agent not required for this platform");
+        if (!isJVMTIAvailable(analyzer)) {
+            System.err.println("❌ JVMTI agent is not available.");
+            System.err.println();
+            System.err.println("To use this feature, ensure:");
+            System.err.println("  1. libmemdiag-agent.so is built and in the classpath");
+            System.err.println("  2. You're running on Linux");
+            System.err.println("  3. The JVM has attach permissions");
             return;
         }
 
@@ -240,8 +266,8 @@ public class NativeCommand extends BaseCommand {
         System.out.println("DETACHING NATIVE AGENT");
         System.out.println("==========================================================================");
 
-        if (!analyzer.requiresAgent()) {
-            System.out.println("Native agent not required for this platform");
+        if (!isJVMTIAvailable(analyzer)) {
+            System.err.println("❌ JVMTI agent is not available.");
             return;
         }
 
@@ -261,8 +287,10 @@ public class NativeCommand extends BaseCommand {
         System.out.println("STARTING ALLOCATION TRACING");
         System.out.println("==========================================================================");
 
-        if (!analyzer.requiresAgent()) {
-            System.out.println("Allocation tracing requires native agent");
+        if (!isJVMTIAvailable(analyzer)) {
+            System.err.println("❌ JVMTI agent is not available.");
+            System.err.println();
+            System.err.println("To use allocation tracing, you need libmemdiag-agent.so.");
             return;
         }
 
@@ -293,6 +321,11 @@ public class NativeCommand extends BaseCommand {
         System.out.println("STOPPING ALLOCATION TRACING");
         System.out.println("==========================================================================");
 
+        if (!isJVMTIAvailable(analyzer)) {
+            System.err.println("❌ JVMTI agent is not available.");
+            return;
+        }
+
         if (!analyzer.isTrackingEnabled()) {
             System.out.println("Tracing is not enabled");
             return;
@@ -312,7 +345,7 @@ public class NativeCommand extends BaseCommand {
         System.out.println("TOP ALLOCATION SITES");
         System.out.println("==========================================================================");
 
-        if (analyzer.isTrackingEnabled()) {
+        if (isJVMTIAvailable(analyzer) && analyzer.isTrackingEnabled()) {
             // 显示来自 native 追踪器的实际数据
             long totalAllocated = analyzer.getTotalAllocated();
             long liveBytes = analyzer.getLiveBytes();
@@ -321,6 +354,20 @@ public class NativeCommand extends BaseCommand {
                 totalAllocated, totalAllocated / (1024.0 * 1024.0));
             System.out.printf("Live bytes:       %,15d bytes (%,.2f MB)%n",
                 liveBytes, liveBytes / (1024.0 * 1024.0));
+            System.out.println();
+        } else if (!isJVMTIAvailable(analyzer)) {
+            System.err.println("⚠ JVMTI agent not available. Showing demo data only.");
+            System.err.println("  To see real allocation sites, install libmemdiag-agent.so and use:");
+            System.err.println("    memdiag native --attach");
+            System.err.println("    memdiag native --start-trace");
+            System.err.println("    memdiag native --allocation-sites");
+            System.out.println();
+        } else if (!analyzer.isTrackingEnabled()) {
+            System.err.println("⚠ Tracing is not enabled. Showing demo data only.");
+            System.err.println("  To see real allocation sites:");
+            System.err.println("    memdiag native --attach");
+            System.err.println("    memdiag native --start-trace");
+            System.err.println("    memdiag native --allocation-sites");
             System.out.println();
         }
 

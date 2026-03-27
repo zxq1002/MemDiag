@@ -1,0 +1,23 @@
+# Native library build environment
+FROM eclipse-temurin:17-jdk-focal
+
+# Install build dependencies
+RUN apt-get update && apt-get install -y \
+    g++ \
+    make \
+    maven \
+    && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /build
+
+# Copy all pom files first for better caching
+COPY pom.xml /build/
+COPY memdiag-core/pom.xml /build/memdiag-core/
+COPY memdiag-native/pom.xml /build/memdiag-native/
+
+# Copy source code
+COPY memdiag-core/src /build/memdiag-core/src/
+COPY memdiag-native/src /build/memdiag-native/src/
+
+# Build the native library
+CMD ["mvn", "clean", "install", "-pl", "memdiag-native", "-am", "-DskipTests", "-Dcompile.native=true"]
