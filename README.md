@@ -172,6 +172,13 @@ MemDiag 采用**子命令**模式，结构清晰。
 - 统计对象数量和占用内存
 - 支持限制输出行数，避免信息过载
 
+#### ⚠️ 对目标进程的影响
+
+此命令会通过 JMX 获取堆直方图：
+- 可能触发 Full GC（取决于 JVM 实现）
+- 需要进入 Safe Point，会**短暂暂停所有应用线程**
+- 已配置 500ms 超时保护，避免过长停顿
+
 #### 选项
 
 | 选项 | 说明 | 默认值 |
@@ -376,6 +383,17 @@ Analysis complete: 0 critical, 0 warning, 0 info issues found. Heap: 55,312,816 
 - 检测堆外内存泄漏
 - 支持 JVMTI Agent 动态挂载和分配追踪
 
+#### ⚠️ 对目标进程的影响
+
+| 选项 | 影响 |
+|-----|------|
+| `--status`/`--summary`/`--regions`/`--diagnose` | **无影响** - 只读 /proc 文件系统 |
+| `--attach` | **有影响** - 需要进入 Safe Point，短暂暂停所有线程；初始化 JVMTI 环境 |
+| `--detach` | **轻微影响** - 恢复字节码，短暂 Safe Point |
+| `--start-trace` | **有影响** - 监听分配事件，**每次对象分配都会触发回调**，增加 CPU 开销；占用额外内存 |
+| `--stop-trace` | **轻微影响** - 停止监听，释放缓冲区 |
+| `--allocation-sites` | **无影响** - 只读已捕获的数据 |
+
 #### 选项
 
 | 选项 | 说明 | 默认值 |
@@ -528,6 +546,16 @@ Agent 挂载前会通过 `EnvironmentPrecheck` 进行环境预检。
 - 加载历史快照进行分析
 - 列出所有可用快照
 - 删除不再需要的快照
+
+#### ⚠️ 对目标进程的影响（仅 --save）
+
+使用 `--save` 保存快照时：
+- 需要获取堆直方图，影响同 `histogram` 命令
+- 可能触发 Full GC
+- 需要进入 Safe Point，会**短暂暂停所有应用线程**
+- 已配置 500ms 超时保护
+
+注：`--list`、`--load`、`--delete` 仅操作本地文件，对目标进程无影响。
 
 #### 选项
 
@@ -1059,6 +1087,47 @@ ls -lh /path/to/memdiag-cli-1.0.0-SNAPSHOT.jar
    ```
 
 3. 快照存储位置：`~/.memdiag/snapshots/`
+
+---
+
+## 生产环境使用建议
+
+### 功能影响总结
+
+| 功能模块 | 子命令/选项 | 对目标进程影响 | 推荐使用场景 |
+|---------|-----------|--------------|------------|
+| **堆内存分析** | `histogram` | ⚠️ 中等 - 可能触发 GC，短暂 Safe Point 停顿 | 非高峰时段分析 |
+| | `snapshot --save` | ⚠️ 中等 - 同 histogram | 保存基准快照 |
+| **线程分析** | `threads` | ✅ 低 - 只读 JMX | 任何时间 |
+| **自动诊断** | `diagnose` | ✅ 低 - 只读 JMX | 任何时间 |
+| **堆外基础分析** | `native --status/--summary/--regions` | ✅ 无 - 只读 /proc | 任何时间 |
+| **Agent 挂载** | `native --attach` | ⚠️ 中等 - 短暂 Safe Point 停顿 | 测试环境先验证 |
+| **Agent 卸载** | `native --detach` | ✅ 低 - 轻微影响 | 分析完成后 |
+| **分配追踪** | `native --start-trace` | 🔴 高 - 每次分配触发回调，增加 CPU | 仅必要时使用 |
+| | `native --stop-trace` | ✅ 低 - 释放缓冲区 | 追踪完成后 |
+| | `native --allocation-sites` | ✅ 无 - 只读已捕获数据 | 任何时间 |
+| **快照加载/对比** | `snapshot --load/list/delete`, `diff` | ✅ 无 - 本地文件操作 | 任何时间 |
+| **报告生成** | `report` | ✅ 低 - 只读 JMX | 任何时间 |
+| **NMT 分析** | `nmt` | ✅ 低 - 只读 JMX | 目标 JVM 已启用 NMT |
+
+### 使用建议
+
+1. **优先使用非侵入式功能**
+   - 先用 `histogram`, `threads`, `diagnose`, `native --summary` 定位问题
+   - 堆直方图分析已配置 500ms 超时，避免过长停顿
+
+2. **谨慎使用 JVMTI Agent**
+   - `--attach` 和 `--start-trace` 建议在测试环境先验证
+   - 分配追踪会增加 CPU 开销，仅在必要时启用
+
+3. **使用快照进行对比**
+   - 先用 `snapshot --save` 保存基准快照
+   - 问题复现后再保存当前快照
+   - 用 `diff` 离线对比，避免对生产环境持续影响
+
+4. **配置调优**
+   - 可通过 `memdiag.jmx.heap-histogram-timeout-ms` 调整超时时间
+   - 可通过 `memdiag.native.sampling-rate` 调整追踪采样率
 
 ---
 
