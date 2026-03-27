@@ -23,6 +23,11 @@ RUN javac MemDiagDemo.java
 # 预设默认 JVM 参数（设置堆大小方便模拟溢出）
 ENV JAVA_OPTS="-Xmx1G -Xms128M"
 
+# 创建 memdiag 快捷命令
+RUN echo '#!/bin/bash' > /usr/local/bin/memdiag && \
+    echo 'java -jar /app/memdiag-cli.jar "$@"' >> /usr/local/bin/memdiag && \
+    chmod +x /usr/local/bin/memdiag
+
 # 启动脚本
 COPY demo/run-scenario.sh /app/
 RUN chmod +x /app/run-scenario.sh
