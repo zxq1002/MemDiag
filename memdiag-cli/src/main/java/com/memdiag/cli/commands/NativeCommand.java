@@ -100,6 +100,12 @@ public class NativeCommand extends BaseCommand {
         System.out.printf("Agent Attached: %s%n", analyzer.isAgentAttached() ? "Yes" : "No");
         System.out.printf("JVMTI Support: %s%n", isJVMTIAvailable(analyzer) ? "✅ Yes" : "❌ No (install libmemdiag-agent.so for advanced features)");
 
+        // Check if native library is loaded
+        String libraryStatus = getNativeLibraryStatus();
+        if (libraryStatus != null) {
+            System.out.printf("Native Library: %s%n", libraryStatus);
+        }
+
         if (!analyzer.isAvailable()) {
             System.out.println();
             System.out.println("NOTE: Native memory analysis requires Linux with /proc filesystem mounted.");
@@ -108,6 +114,24 @@ public class NativeCommand extends BaseCommand {
             System.out.println();
             System.out.println("NOTE: JVMTI advanced features (--attach, --trace) require libmemdiag-agent.so.");
             System.out.println("      Basic features (--status, --summary, --regions, --diagnose) are still available.");
+        }
+    }
+
+    private String getNativeLibraryStatus() {
+        try {
+            Class<?> nativeLoaderClass = Class.forName("com.memdiag.nativeimpl.NativeLoader");
+            java.lang.reflect.Method isLoadedMethod = nativeLoaderClass.getMethod("isLoaded");
+            boolean isLoaded = (Boolean) isLoadedMethod.invoke(null);
+
+            if (isLoaded) {
+                java.lang.reflect.Method getPathMethod = nativeLoaderClass.getMethod("getLoadedLibraryPath");
+                String path = (String) getPathMethod.invoke(null);
+                return "✅ Loaded (" + path + ")";
+            } else {
+                return "❌ Not loaded";
+            }
+        } catch (Exception e) {
+            return "❌ Not available (NativeLoader not found)";
         }
     }
 
@@ -234,6 +258,19 @@ public class NativeCommand extends BaseCommand {
     private void handleAttach(NativeMemoryAnalyzer analyzer) {
         System.out.println("ATTACHING NATIVE AGENT");
         System.out.println("==========================================================================");
+
+        // Check native library status first
+        String libraryStatus = getNativeLibraryStatus();
+        if (libraryStatus != null && libraryStatus.contains("❌")) {
+            System.err.println("❌ Native library not loaded.");
+            System.err.println("   Status: " + libraryStatus);
+            System.err.println();
+            System.err.println("To use this feature, ensure:");
+            System.err.println("  1. libmemdiag-agent.so is built and in the classpath");
+            System.err.println("  2. You're running on Linux");
+            System.err.println("  3. The JVM has attach permissions");
+            return;
+        }
 
         if (!isJVMTIAvailable(analyzer)) {
             System.err.println("❌ JVMTI agent is not available.");

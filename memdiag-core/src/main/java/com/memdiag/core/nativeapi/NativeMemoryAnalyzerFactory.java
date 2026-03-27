@@ -81,6 +81,25 @@ public class NativeMemoryAnalyzerFactory {
     }
 
     private static NativeMemoryAnalyzer tryCreateJVMTIAnalyzer(String pid) {
+        // First try to load the native library
+        try {
+            Class<?> nativeLoaderClass = Class.forName("com.memdiag.nativeimpl.NativeLoader");
+            java.lang.reflect.Method loadMethod = nativeLoaderClass.getMethod("load");
+            java.lang.reflect.Method isLoadedMethod = nativeLoaderClass.getMethod("isLoaded");
+
+            // Try to load the library
+            loadMethod.invoke(null);
+
+            // Check if library was actually loaded
+            boolean isLoaded = (Boolean) isLoadedMethod.invoke(null);
+            if (!isLoaded) {
+                return null;
+            }
+        } catch (Exception e) {
+            // NativeLoader not available or library load failed
+            return null;
+        }
+
         try {
             // Use ServiceLoader to find JVMTINativeAnalyzer implementation
             ServiceLoader<NativeMemoryAnalyzer> loader = ServiceLoader.load(NativeMemoryAnalyzer.class);
