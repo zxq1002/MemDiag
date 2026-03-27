@@ -151,6 +151,34 @@ echo "----------------------------------------"
 test_contains "native --status" "memdiag native --status ${SIM_PID}" "NATIVE MEMORY"
 test_contains "native --summary" "memdiag native --summary ${SIM_PID}" "Total Virtual"
 
+# ========== P1: 多架构原生库支持测试 ==========
+echo ""
+echo "【P1 优先级】多架构原生库支持测试"
+echo "----------------------------------------"
+
+# 检查架构信息
+test_contains "系统架构检测" "java -XshowSettings:properties -version 2>&1 | grep os.arch" "os.arch"
+
+# 检查 JAR 包中是否包含多架构库文件
+run_test "检查 x86_64 库文件存在" "jar tf /app/memdiag-cli.jar | grep -E 'libmemdiag-agent(-x86_64|-amd64)?\.so'"
+test_contains "检查通用库文件存在" "jar tf /app/memdiag-cli.jar" "libmemdiag-agent.so"
+
+# 测试 NativeLoader 类是否可用
+cat > /tmp/TestNativeLoader.java << 'EOF'
+import com.memdiag.nativeimpl.NativeLoader;
+
+public class TestNativeLoader {
+    public static void main(String[] args) {
+        System.out.println("NativeLoader class loaded successfully");
+        System.out.println("isLoaded(): " + NativeLoader.isLoaded());
+        System.out.println("os.arch: " + System.getProperty("os.arch"));
+        System.out.println("os.name: " + System.getProperty("os.name"));
+    }
+}
+EOF
+javac -cp /app/memdiag-cli.jar /tmp/TestNativeLoader.java
+test_contains "NativeLoader 类加载测试" "java -cp /tmp:/app/memdiag-cli.jar TestNativeLoader" "NativeLoader class loaded successfully"
+
 # ========== P1: report 命令测试 ==========
 echo ""
 echo "【P1 优先级】report 命令测试"
