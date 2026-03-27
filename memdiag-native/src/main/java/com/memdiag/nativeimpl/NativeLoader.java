@@ -27,6 +27,15 @@ public class NativeLoader {
     }
 
     public static boolean load() {
+        return load(false);
+    }
+
+    /**
+     * Load the native library.
+     * @param verbose If true, print debug information about loading attempts
+     * @return true if the library was loaded successfully
+     */
+    public static boolean load(boolean verbose) {
         if (loaded) {
             return true;
         }
@@ -39,50 +48,97 @@ public class NativeLoader {
             // Try to load from system library path first
             for (String libName : getLibraryNamesForSystem()) {
                 try {
+                    if (verbose) {
+                        System.out.println("[NativeLoader] Trying system library: " + libName);
+                    }
                     System.loadLibrary(libName);
                     loaded = true;
                     loadedLibraryPath = "system:" + libName;
+                    if (verbose) {
+                        System.out.println("[NativeLoader] Loaded successfully from system: " + loadedLibraryPath);
+                    }
                     return true;
                 } catch (UnsatisfiedLinkError e) {
+                    if (verbose) {
+                        System.out.println("[NativeLoader] Failed to load " + libName + ": " + e.getMessage());
+                    }
                     // Continue to next candidate
                 }
             }
 
             // Try to load from classpath
-            return loadFromClasspath();
+            return loadFromClasspath(verbose);
         }
     }
 
     private static boolean loadFromClasspath() {
+        return loadFromClasspath(false);
+    }
+
+    private static boolean loadFromClasspath(boolean verbose) {
         List<String> candidateNames = getLibraryNamesForSystem();
 
+        if (verbose) {
+            System.out.println("[NativeLoader] Candidates: " + candidateNames);
+        }
+
         for (String libraryName : candidateNames) {
+            if (verbose) {
+                System.out.println("[NativeLoader] Trying classpath: /" + libraryName);
+            }
             // Try to extract and load from classpath
             try (InputStream is = NativeLoader.class.getResourceAsStream("/" + libraryName)) {
                 if (is == null) {
+                    if (verbose) {
+                        System.out.println("[NativeLoader] Resource not found: /" + libraryName);
+                    }
                     continue;
                 }
 
                 File tempFile = File.createTempFile("memdiag-agent-", getSuffixForLibrary(libraryName));
                 tempFile.deleteOnExit();
+                if (verbose) {
+                    System.out.println("[NativeLoader] Created temp file: " + tempFile.getAbsolutePath());
+                }
 
                 try (OutputStream os = new FileOutputStream(tempFile)) {
                     byte[] buffer = new byte[8192];
                     int bytesRead;
+                    long totalBytes = 0;
                     while ((bytesRead = is.read(buffer)) != -1) {
                         os.write(buffer, 0, bytesRead);
+                        totalBytes += bytesRead;
+                    }
+                    if (verbose) {
+                        System.out.println("[NativeLoader] Wrote " + totalBytes + " bytes");
                     }
                 }
 
                 System.load(tempFile.getAbsolutePath());
                 loaded = true;
                 loadedLibraryPath = tempFile.getAbsolutePath();
+                if (verbose) {
+                    System.out.println("[NativeLoader] Loaded successfully: " + loadedLibraryPath);
+                }
                 return true;
             } catch (IOException e) {
+                if (verbose) {
+                    System.out.println("[NativeLoader] IO Error: " + e.getMessage());
+                    e.printStackTrace();
+                }
+                // Continue to next candidate
+            } catch (UnsatisfiedLinkError e) {
+                if (verbose) {
+                    System.out.println("[NativeLoader] Link Error: " + e.getMessage());
+                    e.printStackTrace();
+                }
                 // Continue to next candidate
             }
         }
 
+        if (verbose) {
+            System.out.println("[NativeLoader] All candidates failed");
+        }
         return false;
     }
 
