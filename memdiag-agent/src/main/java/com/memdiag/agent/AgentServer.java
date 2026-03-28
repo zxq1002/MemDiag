@@ -6,8 +6,11 @@ import com.memdiag.agent.collect.AllocationEvent;
 import com.memdiag.agent.collect.DataCollector;
 import com.memdiag.agent.collect.StatsAggregator;
 import com.memdiag.agent.jvmti.AgentJVMTILoader;
+import com.memdiag.core.nativeapi.MemoryRegion;
+import com.memdiag.core.nativeapi.NativeDiagnosis;
 import com.memdiag.core.nativeapi.NativeMemoryAnalyzer;
 import com.memdiag.core.nativeapi.NativeMemoryAnalyzerFactory;
+import com.memdiag.core.nativeapi.NativeMemorySummary;
 import com.sun.net.httpserver.HttpExchange;
 import com.sun.net.httpserver.HttpHandler;
 import com.sun.net.httpserver.HttpServer;
@@ -16,7 +19,9 @@ import java.io.IOException;
 import java.io.OutputStream;
 import java.lang.instrument.Instrumentation;
 import java.net.InetSocketAddress;
+import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
@@ -184,9 +189,19 @@ public class AgentServer {
         @Override
         public void handle(HttpExchange exchange) throws IOException {
             try {
+                NativeMemorySummary summary = nativeAnalyzer.getSummary();
+                Map<String, Object> data = new HashMap<>();
+                data.put("totalResident", summary.getTotalResident());
+                data.put("totalVirtual", summary.getTotalVirtual());
+                data.put("directByteBufferSize", summary.getDirectByteBufferSize());
+                data.put("jniAllocatedSize", summary.getJniAllocatedSize());
+                data.put("threadStackSize", summary.getThreadStackSize());
+                data.put("codeCacheSize", summary.getCodeCacheSize());
+                data.put("breakdownByCategory", summary.getBreakdownByCategory());
+
                 Map<String, Object> response = new HashMap<>();
                 response.put("success", true);
-                response.put("data", nativeAnalyzer.getSummary());
+                response.put("data", data);
                 sendJsonResponse(exchange, response, 200);
             } catch (Exception e) {
                 sendErrorResponse(exchange, e.getMessage(), 500);
@@ -198,9 +213,23 @@ public class AgentServer {
         @Override
         public void handle(HttpExchange exchange) throws IOException {
             try {
+                List<MemoryRegion> regions = nativeAnalyzer.getMemoryRegions();
+                List<Map<String, Object>> regionData = new ArrayList<>();
+                for (MemoryRegion region : regions) {
+                    Map<String, Object> r = new HashMap<>();
+                    r.put("startAddress", region.getStartAddress());
+                    r.put("endAddress", region.getEndAddress());
+                    r.put("size", region.getSize());
+                    r.put("residentSize", region.getResidentSize());
+                    r.put("permissions", region.getPermissions());
+                    r.put("mappingFile", region.getMappingFile());
+                    r.put("regionType", region.getRegionType());
+                    regionData.add(r);
+                }
+
                 Map<String, Object> response = new HashMap<>();
                 response.put("success", true);
-                response.put("data", nativeAnalyzer.getMemoryRegions());
+                response.put("data", regionData);
                 sendJsonResponse(exchange, response, 200);
             } catch (Exception e) {
                 sendErrorResponse(exchange, e.getMessage(), 500);
@@ -212,9 +241,15 @@ public class AgentServer {
         @Override
         public void handle(HttpExchange exchange) throws IOException {
             try {
+                NativeDiagnosis diagnosis = nativeAnalyzer.analyzeNativeLeaks();
+                Map<String, Object> data = new HashMap<>();
+                data.put("findings", diagnosis.getFindings());
+                data.put("warnings", diagnosis.getWarnings());
+                data.put("recommendations", diagnosis.getRecommendations());
+
                 Map<String, Object> response = new HashMap<>();
                 response.put("success", true);
-                response.put("data", nativeAnalyzer.analyzeNativeLeaks());
+                response.put("data", data);
                 sendJsonResponse(exchange, response, 200);
             } catch (Exception e) {
                 sendErrorResponse(exchange, e.getMessage(), 500);
