@@ -18,6 +18,7 @@ public class AgentConfig {
 
     // Instrumentation configuration
     private boolean instrumentationEnabled = true;
+    private boolean methodMonitoringEnabled = true;
     private int samplingRate = 100; // 1% sampling by default (1 out of 100)
 
     // JVMTI configuration
@@ -100,6 +101,9 @@ public class AgentConfig {
             case "instrumentation.enabled":
                 instrumentationEnabled = Boolean.parseBoolean(value);
                 break;
+            case "methodMonitoring.enabled":
+                methodMonitoringEnabled = Boolean.parseBoolean(value);
+                break;
             case "samplingRate":
             case "instrumentation.samplingRate":
                 try {
@@ -148,6 +152,10 @@ public class AgentConfig {
 
     public boolean isInstrumentationEnabled() {
         return instrumentationEnabled;
+    }
+
+    public boolean isMethodMonitoringEnabled() {
+        return methodMonitoringEnabled;
     }
 
     public int getSamplingRate() {

@@ -80,6 +80,14 @@ public class InstrumentManager {
                 methodMonitorTransformer = new MethodMonitorTransformer(config);
             }
 
+            // Initialize MemDiagSpy bridge
+            try {
+                MemDiagSpy.init(allocationTransformer, methodMonitorTransformer);
+                System.out.println("[MemDiag] MemDiagSpy initialized");
+            } catch (Exception e) {
+                System.err.println("[MemDiag] Failed to initialize MemDiagSpy: " + e.getMessage());
+            }
+
             System.out.println("[MemDiag] InstrumentManager initialized");
         } else {
             System.out.println("[MemDiag] Instrumentation disabled by configuration");

@@ -1,26 +1,42 @@
 package com.memdiag.agent.instrument;
 
+import java.lang.reflect.Method;
+
 /**
  * Bridge class injected into the bootstrap classloader to allow instrumented
  * classes to call back into the agent.
  */
 public class MemDiagSpy {
     private static final ThreadLocal<Boolean> IN_PROGRESS = ThreadLocal.withInitial(() -> false);
-    private static volatile AllocationTransformer allocationTransformer;
-    private static volatile MethodMonitorTransformer methodMonitorTransformer;
+    
+    private static Object allocationTransformer;
+    private static Method recordAllocationMethod;
+    
+    private static Object methodMonitorTransformer;
+    private static Method recordMethodEntryMethod;
+    private static Method recordMethodExitMethod;
 
-    public static void init(AllocationTransformer allocTransformer, MethodMonitorTransformer methodTransformer) {
-        allocationTransformer = allocTransformer;
-        methodMonitorTransformer = methodTransformer;
+    public static void init(Object allocTransformer, Object methodTransformer) {
+        try {
+            allocationTransformer = allocTransformer;
+            recordAllocationMethod = allocTransformer.getClass().getMethod("recordAllocation", long.class, String.class);
+            
+            methodMonitorTransformer = methodTransformer;
+            recordMethodEntryMethod = methodTransformer.getClass().getMethod("recordMethodEntry", String.class, String.class, String.class);
+            recordMethodExitMethod = methodTransformer.getClass().getMethod("recordMethodExit", String.class, String.class, String.class, long.class);
+        } catch (Exception e) {
+            System.err.println("[MemDiagSpy] Failed to initialize: " + e.getMessage());
+        }
     }
 
     public static void recordAllocation(long size, String type) {
         if (IN_PROGRESS.get()) return;
         IN_PROGRESS.set(true);
         try {
-            if (allocationTransformer != null) {
-                allocationTransformer.recordAllocation(size, type);
+            if (recordAllocationMethod != null) {
+                recordAllocationMethod.invoke(allocationTransformer, size, type);
             }
+        } catch (Exception e) {
         } finally {
             IN_PROGRESS.set(false);
         }
@@ -30,9 +46,10 @@ public class MemDiagSpy {
         if (IN_PROGRESS.get()) return;
         IN_PROGRESS.set(true);
         try {
-            if (methodMonitorTransformer != null) {
-                methodMonitorTransformer.recordMethodEntry(className, methodName, descriptor);
+            if (recordMethodEntryMethod != null) {
+                recordMethodEntryMethod.invoke(methodMonitorTransformer, className, methodName, descriptor);
             }
+        } catch (Exception e) {
         } finally {
             IN_PROGRESS.set(false);
         }
@@ -42,9 +59,10 @@ public class MemDiagSpy {
         if (IN_PROGRESS.get()) return;
         IN_PROGRESS.set(true);
         try {
-            if (methodMonitorTransformer != null) {
-                methodMonitorTransformer.recordMethodExit(className, methodName, descriptor, durationNanos);
+            if (recordMethodExitMethod != null) {
+                recordMethodExitMethod.invoke(methodMonitorTransformer, className, methodName, descriptor, durationNanos);
             }
+        } catch (Exception e) {
         } finally {
             IN_PROGRESS.set(false);
         }

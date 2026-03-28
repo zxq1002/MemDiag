@@ -75,10 +75,17 @@ public class AllocationTransformer implements ClassFileTransformer {
      */
     private boolean shouldTransform(String className) {
         if (className == null) return false;
-        // Exclude system/agent classes
-        if (className.startsWith("java/") || className.startsWith("sun/") || className.startsWith("com/memdiag/")) {
+
+        // Exclude common system packages to improve performance and stability
+        if (className.startsWith("java/") ||
+            className.startsWith("javax/") ||
+            className.startsWith("sun/") ||
+            className.startsWith("jdk/") ||
+            className.startsWith("com/sun/") ||
+            className.startsWith("com/memdiag/agent/")) {
             return false;
         }
+
         return true;
     }
 
@@ -123,42 +130,18 @@ public class AllocationTransformer implements ClassFileTransformer {
         }
 
         @Override
-        public void visitIntInsn(int opcode, int operand) {
-            super.visitIntInsn(opcode, operand);
-            if (opcode == NEWARRAY) {
-                // Stack: [array_ref]
-                recordArrayAlloc();
-            }
-        }
-
-        @Override
-        public void visitTypeInsn(int opcode, String type) {
-            super.visitTypeInsn(opcode, type);
-            if (opcode == ANEWARRAY) {
-                // Stack: [array_ref]
-                recordArrayAlloc();
-            }
-        }
-
-        @Override
         public void visitMethodInsn(int opcode, String owner, String name, String descriptor, boolean isInterface) {
             super.visitMethodInsn(opcode, owner, name, descriptor, isInterface);
-            if (opcode == INVOKESTATIC && owner.equals("java/nio/ByteBuffer") && name.equals("allocateDirect")) {
-                // Stack: [ByteBuffer]
+            if (opcode == INVOKESTATIC && owner.equals("java/nio/ByteBuffer") &&
+                (name.equals("allocateDirect") || name.equals("allocate"))) {
+                // After allocateDirect/allocat, stack: [ByteBuffer]
+                boolean isDirect = name.equals("allocateDirect");
                 mv.visitInsn(DUP);
                 mv.visitMethodInsn(INVOKEVIRTUAL, "java/nio/ByteBuffer", "capacity", "()I", false);
                 mv.visitInsn(I2L);
-                mv.visitLdcInsn("java.nio.DirectByteBuffer");
+                mv.visitLdcInsn(isDirect ? "java.nio.DirectByteBuffer" : "java.nio.HeapByteBuffer");
                 mv.visitMethodInsn(INVOKESTATIC, "com/memdiag/agent/instrument/MemDiagSpy", "recordAllocation", "(JLjava/lang/String;)V", false);
             }
-        }
-
-        private void recordArrayAlloc() {
-            mv.visitInsn(DUP);
-            mv.visitInsn(ARRAYLENGTH);
-            mv.visitInsn(I2L);
-            mv.visitLdcInsn("array"); // Simplified type
-            mv.visitMethodInsn(INVOKESTATIC, "com/memdiag/agent/instrument/MemDiagSpy", "recordAllocation", "(JLjava/lang/String;)V", false);
         }
     }
 

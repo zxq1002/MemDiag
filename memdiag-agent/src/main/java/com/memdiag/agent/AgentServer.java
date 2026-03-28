@@ -99,12 +99,14 @@ public class AgentServer {
 
         // New Phase 1 endpoints
         server.createContext("/api/v1/agent/status", new AgentStatusHandler());
+        server.createContext("/status", new AgentStatusHandler()); // Alias
         server.createContext("/api/v1/agent/config", new AgentConfigHandler());
         server.createContext("/api/v1/agent/metrics", new AgentMetricsHandler());
 
         // New Phase 3 endpoints - allocation tracking
         server.createContext("/api/v1/allocations/recent", new AllocationsRecentHandler());
         server.createContext("/api/v1/allocations/stats", new AllocationsStatsHandler());
+        server.createContext("/allocations", new AllocationsStatsHandler()); // Alias
         server.createContext("/api/v1/allocations/top", new AllocationsTopHandler());
         server.createContext("/api/v1/allocations/rate", new AllocationsRateHandler());
         server.createContext("/api/v1/allocations/summary", new AllocationsSummaryHandler());
@@ -114,6 +116,7 @@ public class AgentServer {
 
         // New Phase 3 endpoints - method monitoring
         server.createContext("/api/v1/methods/stats", new MethodsStatsHandler());
+        server.createContext("/methods", new MethodsStatsHandler()); // Alias
         server.createContext("/api/v1/methods/slow", new MethodsSlowHandler());
         server.createContext("/api/v1/instrumentation/status", new InstrumentationStatusHandler());
         server.createContext("/api/v1/instrumentation/allocation/enable", new EnableAllocationTrackingHandler());

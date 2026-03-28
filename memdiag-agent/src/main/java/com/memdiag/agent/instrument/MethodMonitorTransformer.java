@@ -53,6 +53,8 @@ public class MethodMonitorTransformer implements ClassFileTransformer {
         excludePackages.add("jdk/");
         excludePackages.add("org/objectweb/asm/");
         excludePackages.add("com/memdiag/");
+        excludePackages.add("apple/");
+        excludePackages.add("com/apple/");
 
         // Set the static instance
         instance = this;
@@ -122,6 +124,8 @@ public class MethodMonitorTransformer implements ClassFileTransformer {
                             ProtectionDomain protectionDomain, byte[] classfileBuffer) {
         if (!shouldTransform(className)) return null;
 
+        final String finalClassName = className.replace('/', '.');
+
         try {
             ClassReader cr = new ClassReader(classfileBuffer);
             ClassWriter cw = new ClassWriter(cr, ClassWriter.COMPUTE_FRAMES);
@@ -129,6 +133,10 @@ public class MethodMonitorTransformer implements ClassFileTransformer {
                 @Override
                 public MethodVisitor visitMethod(int access, String name, String desc, String sig, String[] exc) {
                     MethodVisitor mv = super.visitMethod(access, name, desc, sig, exc);
+
+                    final String finalMethodName = name;
+                    final String finalDesc = desc;
+
                     return new AdviceAdapter(AsmUtils.getAsmApiVersion(Opcodes.V1_8), mv, access, name, desc) {
                         private int startTimeId;
 
@@ -138,9 +146,9 @@ public class MethodMonitorTransformer implements ClassFileTransformer {
                             startTimeId = newLocal(Type.LONG_TYPE);
                             mv.visitVarInsn(LSTORE, startTimeId);
 
-                            mv.visitLdcInsn(className);
-                            mv.visitLdcInsn(name);
-                            mv.visitLdcInsn(desc);
+                            mv.visitLdcInsn(finalClassName);
+                            mv.visitLdcInsn(finalMethodName);
+                            mv.visitLdcInsn(finalDesc);
                             mv.visitMethodInsn(INVOKESTATIC, "com/memdiag/agent/instrument/MemDiagSpy", "recordMethodEntry", "(Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;)V", false);
                         }
 
@@ -152,9 +160,9 @@ public class MethodMonitorTransformer implements ClassFileTransformer {
                         }
 
                         private void recordExit() {
-                            mv.visitLdcInsn(className);
-                            mv.visitLdcInsn(name);
-                            mv.visitLdcInsn(desc);
+                            mv.visitLdcInsn(finalClassName);
+                            mv.visitLdcInsn(finalMethodName);
+                            mv.visitLdcInsn(finalDesc);
                             mv.visitMethodInsn(INVOKESTATIC, "java/lang/System", "nanoTime", "()J", false);
                             mv.visitVarInsn(LLOAD, startTimeId);
                             mv.visitInsn(LSUB);
