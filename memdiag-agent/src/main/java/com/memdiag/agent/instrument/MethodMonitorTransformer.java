@@ -58,6 +58,14 @@ public class MethodMonitorTransformer implements ClassFileTransformer {
 
         // Set the static instance
         instance = this;
+
+        // Initialize from config
+        String[] configIncludes = config.getIncludePackages();
+        if (configIncludes != null) {
+            for (String include : configIncludes) {
+                addIncludePackage(include);
+            }
+        }
     }
 
     /**

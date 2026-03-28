@@ -87,6 +87,7 @@ public class MemDiagAgent {
                 agentServer.stop();
             } catch (Exception e) {}
         }
+        context.shutdownScheduler();
         context.setState(AgentContext.AgentState.STOPPED);
     }
 
@@ -95,6 +96,12 @@ public class MemDiagAgent {
         StatsAggregator statsAggregator = new StatsAggregator(dataCollector);
         context.setDataCollector(dataCollector);
         context.setStatsAggregator(statsAggregator);
+
+        // Start periodic snapshot task
+        context.startScheduler().scheduleAtFixedRate(
+            statsAggregator::takeSnapshot,
+            1, 1, java.util.concurrent.TimeUnit.SECONDS
+        );
 
         // Inject MemDiagSpy via a dedicated small JAR to avoid LinkageError
         try {

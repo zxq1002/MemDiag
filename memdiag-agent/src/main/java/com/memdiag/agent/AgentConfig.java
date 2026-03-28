@@ -20,6 +20,7 @@ public class AgentConfig {
     private boolean instrumentationEnabled = true;
     private boolean methodMonitoringEnabled = true;
     private int samplingRate = 100; // 1% sampling by default (1 out of 100)
+    private String[] includePackages = new String[0];
 
     // JVMTI configuration
     private boolean jvmtiEnabled = true;
@@ -117,6 +118,18 @@ public class AgentConfig {
                     System.err.println("[MemDiag] Invalid sampling rate: " + value + ", using default: " + samplingRate);
                 }
                 break;
+            case "includePackages":
+            case "instrumentation.includePackages":
+                if (value != null && !value.isEmpty()) {
+                    includePackages = value.split(";");
+                    for (int i = 0; i < includePackages.length; i++) {
+                        includePackages[i] = includePackages[i].trim().replace('.', '/');
+                        if (!includePackages[i].endsWith("/")) {
+                            includePackages[i] += "/";
+                        }
+                    }
+                }
+                break;
             case "jvmti.enabled":
                 jvmtiEnabled = Boolean.parseBoolean(value);
                 break;
@@ -160,6 +173,10 @@ public class AgentConfig {
 
     public int getSamplingRate() {
         return samplingRate;
+    }
+
+    public String[] getIncludePackages() {
+        return includePackages;
     }
 
     public boolean isJvmtiEnabled() {

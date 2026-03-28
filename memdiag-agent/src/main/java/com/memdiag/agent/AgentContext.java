@@ -6,6 +6,9 @@ import com.memdiag.agent.instrument.InstrumentManager;
 import com.memdiag.agent.jvmti.AgentJVMTILoader;
 
 import java.lang.instrument.Instrumentation;
+import java.util.concurrent.Executors;
+import java.util.concurrent.ScheduledExecutorService;
+import java.util.concurrent.TimeUnit;
 
 /**
  * Holds the context for the MemDiag Agent, including all major components.
@@ -18,6 +21,7 @@ public class AgentContext {
     private final AgentConfig config;
     private volatile AgentState state;
     private volatile AgentServer server;
+    private volatile ScheduledExecutorService scheduler;
 
     // Data collection components (Phase 3)
     private volatile DataCollector dataCollector;
@@ -119,6 +123,38 @@ public class AgentContext {
 
     public boolean isServerRunning() {
         return server != null && server.isRunning();
+    }
+
+    // Scheduler management
+
+    public synchronized ScheduledExecutorService startScheduler() {
+        if (scheduler == null || scheduler.isShutdown()) {
+            scheduler = Executors.newScheduledThreadPool(1, r -> {
+                Thread t = new Thread(r, "MemDiag-Scheduler");
+                t.setDaemon(true);
+                return t;
+            });
+            System.out.println("[MemDiag] Scheduler started");
+        }
+        return scheduler;
+    }
+
+    public ScheduledExecutorService getScheduler() {
+        return scheduler;
+    }
+
+    public synchronized void shutdownScheduler() {
+        if (scheduler != null && !scheduler.isShutdown()) {
+            scheduler.shutdown();
+            try {
+                if (!scheduler.awaitTermination(2, TimeUnit.SECONDS)) {
+                    scheduler.shutdownNow();
+                }
+            } catch (InterruptedException e) {
+                scheduler.shutdownNow();
+            }
+            System.out.println("[MemDiag] Scheduler stopped");
+        }
     }
 
     // Data collection components (Phase 3)

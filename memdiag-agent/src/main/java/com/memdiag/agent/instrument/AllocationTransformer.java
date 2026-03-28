@@ -76,6 +76,11 @@ public class AllocationTransformer implements ClassFileTransformer {
     private boolean shouldTransform(String className) {
         if (className == null) return false;
 
+        // Explicitly allow ByteBuffer for tracking direct/heap buffers
+        if (className.equals("java/nio/ByteBuffer")) {
+            return true;
+        }
+
         // Exclude common system packages to improve performance and stability
         if (className.startsWith("java/") ||
             className.startsWith("javax/") ||
