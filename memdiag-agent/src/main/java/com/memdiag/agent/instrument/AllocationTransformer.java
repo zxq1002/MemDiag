@@ -140,6 +140,19 @@ public class AllocationTransformer implements ClassFileTransformer {
             }
         }
 
+        @Override
+        public void visitMethodInsn(int opcode, String owner, String name, String descriptor, boolean isInterface) {
+            super.visitMethodInsn(opcode, owner, name, descriptor, isInterface);
+            if (opcode == INVOKESTATIC && owner.equals("java/nio/ByteBuffer") && name.equals("allocateDirect")) {
+                // Stack: [ByteBuffer]
+                mv.visitInsn(DUP);
+                mv.visitMethodInsn(INVOKEVIRTUAL, "java/nio/ByteBuffer", "capacity", "()I", false);
+                mv.visitInsn(I2L);
+                mv.visitLdcInsn("java.nio.DirectByteBuffer");
+                mv.visitMethodInsn(INVOKESTATIC, "com/memdiag/agent/instrument/MemDiagSpy", "recordAllocation", "(JLjava/lang/String;)V", false);
+            }
+        }
+
         private void recordArrayAlloc() {
             mv.visitInsn(DUP);
             mv.visitInsn(ARRAYLENGTH);
