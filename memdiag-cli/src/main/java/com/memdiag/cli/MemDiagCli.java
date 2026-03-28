@@ -1,5 +1,6 @@
 package com.memdiag.cli;
 
+import com.memdiag.cli.commands.AgentCommand;
 import com.memdiag.cli.commands.DiagnoseCommand;
 import com.memdiag.cli.commands.DiffCommand;
 import com.memdiag.cli.commands.GcRootsCommand;
@@ -15,7 +16,8 @@ import picocli.CommandLine.Command;
 @Command(name = "memdiag",
          subcommands = {HistogramCommand.class, ThreadsCommand.class, DiagnoseCommand.class,
                         NativeCommand.class, ReportCommand.class, NmtCommand.class,
-                        SnapshotCommand.class, DiffCommand.class, GcRootsCommand.class},
+                        SnapshotCommand.class, DiffCommand.class, GcRootsCommand.class,
+                        AgentCommand.class},
          description = "JVM Memory Diagnosis Tool",
          mixinStandardHelpOptions = true)
 public class MemDiagCli {
