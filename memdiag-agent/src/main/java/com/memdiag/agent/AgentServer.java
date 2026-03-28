@@ -6,18 +6,32 @@ import com.memdiag.agent.collect.AllocationEvent;
 import com.memdiag.agent.collect.DataCollector;
 import com.memdiag.agent.collect.StatsAggregator;
 import com.memdiag.agent.jvmti.AgentJVMTILoader;
+import com.memdiag.core.diagnose.DiagnosisEngine;
+import com.memdiag.core.diagnose.DiagnosisResult;
+import com.memdiag.core.diagnose.RuleRegistry;
+import com.memdiag.core.heap.ClassStats;
+import com.memdiag.core.heap.HeapHistogram;
 import com.memdiag.core.nativeapi.MemoryRegion;
 import com.memdiag.core.nativeapi.NativeDiagnosis;
 import com.memdiag.core.nativeapi.NativeMemoryAnalyzer;
 import com.memdiag.core.nativeapi.NativeMemoryAnalyzerFactory;
 import com.memdiag.core.nativeapi.NativeMemorySummary;
+import com.memdiag.core.thread.ThreadAnalyzer;
+import com.memdiag.core.thread.ThreadDump;
+import com.memdiag.core.thread.ThreadStats;
+import com.memdiag.core.util.JmxClient;
 import com.sun.net.httpserver.HttpExchange;
 import com.sun.net.httpserver.HttpHandler;
 import com.sun.net.httpserver.HttpServer;
 
+import javax.management.ObjectName;
+import java.io.BufferedReader;
+import java.io.StringReader;
 import java.io.IOException;
 import java.io.OutputStream;
 import java.lang.instrument.Instrumentation;
+import java.lang.management.ManagementFactory;
+import java.lang.management.ThreadMXBean;
 import java.net.InetSocketAddress;
 import java.util.ArrayList;
 import java.util.HashMap;
@@ -32,6 +46,7 @@ public class AgentServer {
     private final int port;
     private final Instrumentation instrumentation;
     private final NativeMemoryAnalyzer nativeAnalyzer;
+    private final ThreadMXBean threadMXBean;
     private final Gson gson;
 
     private HttpServer server;
@@ -43,7 +58,15 @@ public class AgentServer {
         this.port = port;
         this.instrumentation = instrumentation;
         this.nativeAnalyzer = NativeMemoryAnalyzerFactory.getInstance();
+        this.threadMXBean = ManagementFactory.getThreadMXBean();
         this.gson = new GsonBuilder().setPrettyPrinting().create();
+
+        if (threadMXBean.isThreadCpuTimeSupported()) {
+            threadMXBean.setThreadCpuTimeEnabled(true);
+        }
+        if (threadMXBean.isThreadContentionMonitoringSupported()) {
+            threadMXBean.setThreadContentionMonitoringEnabled(true);
+        }
     }
 
     public void start() throws Exception {
@@ -55,9 +78,15 @@ public class AgentServer {
         server = HttpServer.create(new InetSocketAddress(host, port), 0);
         server.setExecutor(executor);
 
-        server.createContext("/api/v1/histogram", new SimpleHandler("histogram"));
-        server.createContext("/api/v1/threads", new SimpleHandler("threads"));
-        server.createContext("/api/v1/diagnose", new SimpleHandler("diagnose"));
+        // Legacy endpoints for CLI AgentClient compatibility
+        server.createContext("/api/heap/histogram", new HeapHistogramHandler());
+        server.createContext("/api/threads", new ThreadsHandler());
+        server.createContext("/api/diagnose", new DiagnoseHandler());
+
+        // v1 API endpoints
+        server.createContext("/api/v1/histogram", new HeapHistogramHandler());
+        server.createContext("/api/v1/threads", new ThreadsHandler());
+        server.createContext("/api/v1/diagnose", new DiagnoseHandler());
         server.createContext("/api/v1/snapshot", new SimpleHandler("snapshot"));
         server.createContext("/api/v1/detach", new DetachHandler());
 
@@ -563,5 +592,219 @@ public class AgentServer {
                 sendErrorResponse(exchange, e.getMessage(), 500);
             }
         }
+    }
+
+    // ========== Local JVM Analysis Handlers ==========
+
+    private class HeapHistogramHandler implements HttpHandler {
+        @Override
+        public void handle(HttpExchange exchange) throws IOException {
+            try {
+                int limit = getIntParam(exchange, "limit", 100);
+                HeapHistogram histogram = getLocalHeapHistogram(limit);
+                sendJsonResponse(exchange, histogram, 200);
+            } catch (Exception e) {
+                sendErrorResponse(exchange, e.getMessage(), 500);
+            }
+        }
+
+        private HeapHistogram getLocalHeapHistogram(int limit) throws Exception {
+            ObjectName diagnosticName = new ObjectName("com.sun.management:type=DiagnosticCommand");
+            String result = (String) ManagementFactory.getPlatformMBeanServer().invoke(
+                diagnosticName,
+                "gcClassHistogram",
+                new Object[]{null},
+                new String[]{String[].class.getName()}
+            );
+            return parseClassHistogram(result, limit);
+        }
+
+        private HeapHistogram parseClassHistogram(String output, int limit) {
+            HeapHistogram full = new HeapHistogram();
+            HeapHistogram limited = new HeapHistogram();
+
+            try (BufferedReader reader = new BufferedReader(new StringReader(output))) {
+                String line;
+                boolean inDataSection = false;
+
+                while ((line = reader.readLine()) != null) {
+                    line = line.trim();
+                    if (line.startsWith("num")) {
+                        inDataSection = true;
+                        continue;
+                    }
+                    if (line.startsWith("-") || line.startsWith("Total")) {
+                        continue;
+                    }
+                    if (!inDataSection || line.isEmpty()) {
+                        continue;
+                    }
+
+                    String[] parts = line.split("\\s+");
+                    if (parts.length >= 4) {
+                        try {
+                            long count = Long.parseLong(parts[1]);
+                            long bytes = Long.parseLong(parts[2]);
+                            StringBuilder className = new StringBuilder(parts[3]);
+                            for (int i = 4; i < parts.length; i++) {
+                                className.append(" ").append(parts[i]);
+                            }
+                            full.add(new ClassStats(className.toString(), count, bytes));
+                        } catch (NumberFormatException ignored) {
+                        }
+                    }
+                }
+            } catch (Exception e) {
+                throw new RuntimeException("Failed to parse class histogram", e);
+            }
+
+            full.getTopByShallowBytes(limit).forEach(limited::add);
+            return limited;
+        }
+    }
+
+    private class ThreadsHandler implements HttpHandler {
+        @Override
+        public void handle(HttpExchange exchange) throws IOException {
+            try {
+                ThreadDump dump = getLocalThreadDump();
+                sendJsonResponse(exchange, dump, 200);
+            } catch (Exception e) {
+                sendErrorResponse(exchange, e.getMessage(), 500);
+            }
+        }
+
+        private ThreadDump getLocalThreadDump() {
+            ThreadDump dump = new ThreadDump();
+            dump.setTimestamp(java.time.Instant.now());
+
+            long[] allThreadIds = threadMXBean.getAllThreadIds();
+            for (long threadId : allThreadIds) {
+                java.lang.management.ThreadInfo info = threadMXBean.getThreadInfo(threadId, Integer.MAX_VALUE);
+                if (info != null) {
+                    dump.addThreadStats(convertToThreadStatsWithStack(info));
+                }
+            }
+            return dump;
+        }
+
+        private ThreadStats convertToThreadStatsWithStack(java.lang.management.ThreadInfo jmxInfo) {
+            ThreadStats stats = new ThreadStats();
+            stats.setThreadId(jmxInfo.getThreadId());
+            stats.setThreadName(jmxInfo.getThreadName());
+            stats.setState(convertState(jmxInfo.getThreadState()));
+            stats.setBlockedCount(jmxInfo.getBlockedCount());
+            stats.setBlockedTime(jmxInfo.getBlockedTime());
+            stats.setWaitedCount(jmxInfo.getWaitedCount());
+            stats.setWaitedTime(jmxInfo.getWaitedTime());
+
+            List<com.memdiag.core.thread.StackFrame> stackFrames = new ArrayList<>();
+            for (StackTraceElement element : jmxInfo.getStackTrace()) {
+                com.memdiag.core.thread.StackFrame frame = new com.memdiag.core.thread.StackFrame();
+                frame.setClassName(element.getClassName());
+                frame.setMethodName(element.getMethodName());
+                frame.setFileName(element.getFileName());
+                frame.setLineNumber(element.getLineNumber());
+                frame.setNativeMethod(element.isNativeMethod());
+                stackFrames.add(frame);
+            }
+            stats.setStackTrace(stackFrames);
+            return stats;
+        }
+
+        private com.memdiag.core.thread.ThreadState convertState(Thread.State state) {
+            if (state == null) return com.memdiag.core.thread.ThreadState.UNKNOWN;
+            switch (state) {
+                case NEW: return com.memdiag.core.thread.ThreadState.NEW;
+                case RUNNABLE: return com.memdiag.core.thread.ThreadState.RUNNABLE;
+                case BLOCKED: return com.memdiag.core.thread.ThreadState.BLOCKED;
+                case WAITING: return com.memdiag.core.thread.ThreadState.WAITING;
+                case TIMED_WAITING: return com.memdiag.core.thread.ThreadState.TIMED_WAITING;
+                case TERMINATED: return com.memdiag.core.thread.ThreadState.TERMINATED;
+                default: return com.memdiag.core.thread.ThreadState.UNKNOWN;
+            }
+        }
+    }
+
+    private class DiagnoseHandler implements HttpHandler {
+        @Override
+        public void handle(HttpExchange exchange) throws IOException {
+            try {
+                DiagnosisResult result = performLocalDiagnosis();
+                sendJsonResponse(exchange, result, 200);
+            } catch (Exception e) {
+                sendErrorResponse(exchange, e.getMessage(), 500);
+            }
+        }
+
+        private DiagnosisResult performLocalDiagnosis() throws Exception {
+            HeapHistogram histogram = new HeapHistogramHandler().getLocalHeapHistogram(100);
+            ThreadDump threadDump = new ThreadsHandler().getLocalThreadDump();
+            long heapUsed = ManagementFactory.getMemoryMXBean().getHeapMemoryUsage().getUsed();
+            long heapCommitted = ManagementFactory.getMemoryMXBean().getHeapMemoryUsage().getCommitted();
+
+            DiagnosisResult.Builder result = DiagnosisResult.builder()
+                .timestamp(java.time.Instant.now())
+                .totalHeapUsed(heapUsed)
+                .totalHeapCommitted(heapCommitted)
+                .threadCount(threadDump.getThreadCount());
+
+            List<com.memdiag.core.diagnose.Issue> issues = new ArrayList<>();
+
+            com.memdiag.core.diagnose.DiagnosisContext context = com.memdiag.core.diagnose.DiagnosisContext.builder()
+                .heapHistogram(histogram)
+                .threadDump(threadDump)
+                .totalHeapUsed(heapUsed)
+                .totalHeapCommitted(heapCommitted)
+                .build();
+
+            RuleRegistry registry = RuleRegistry.withDefaults();
+            for (com.memdiag.core.diagnose.DiagnosisRule rule : registry.getEnabledRules()) {
+                try {
+                    issues.addAll(rule.evaluate(context));
+                } catch (Exception e) {
+                    issues.add(com.memdiag.core.diagnose.Issue.builder()
+                        .severity(com.memdiag.core.diagnose.Severity.WARNING)
+                        .type("RULE_ERROR")
+                        .title("Rule execution error: " + rule.getName())
+                        .description("Rule " + rule.getId() + " failed: " + e.getMessage())
+                        .build());
+                }
+            }
+
+            long criticalCount = issues.stream().filter(i -> i.getSeverity() == com.memdiag.core.diagnose.Severity.CRITICAL).count();
+            long warningCount = issues.stream().filter(i -> i.getSeverity() == com.memdiag.core.diagnose.Severity.WARNING).count();
+            long infoCount = issues.stream().filter(i -> i.getSeverity() == com.memdiag.core.diagnose.Severity.INFO).count();
+
+            String summary = String.format("Analysis complete: %,d critical, %,d warning, %,d info issues found. " +
+                    "Heap: %,d bytes used, %,d classes. Threads: %,d active. Rules executed: %d.",
+                criticalCount, warningCount, infoCount,
+                histogram.getTotalBytes(),
+                histogram.getClassStats().size(),
+                threadDump.getThreadCount(),
+                registry.getEnabledRules().size());
+
+            result.summary(summary);
+            issues.forEach(result::addIssue);
+            return result.build();
+        }
+    }
+
+    private int getIntParam(HttpExchange exchange, String name, int defaultValue) {
+        String query = exchange.getRequestURI().getQuery();
+        if (query == null) {
+            return defaultValue;
+        }
+        for (String param : query.split("&")) {
+            String[] parts = param.split("=", 2);
+            if (parts.length == 2 && parts[0].equals(name)) {
+                try {
+                    return Integer.parseInt(parts[1]);
+                } catch (NumberFormatException e) {
+                    return defaultValue;
+                }
+            }
+        }
+        return defaultValue;
     }
 }
