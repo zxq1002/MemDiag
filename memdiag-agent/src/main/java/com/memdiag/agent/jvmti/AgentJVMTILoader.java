@@ -92,7 +92,8 @@ public class AgentJVMTILoader {
 
     private void initializeJVMTI() {
         System.out.println("[MemDiag] JVMTI initialized");
-        // TODO: Register JVMTI event callbacks via JNI
+        // Register JVMTI event callbacks via JNI
+        JVMTIEventBridge.registerCallbacks();
     }
 
     /**

@@ -7,6 +7,10 @@
 // Global state
 static GlobalState* g_state = nullptr;
 
+// Global JNI references for the bridge
+static jclass g_bridge_class = nullptr;
+static jmethodID g_on_native_alloc_method = nullptr;
+
 // Forward declarations
 static jint initialize_agent(JavaVM* vm, char* options, bool is_attach, size_t sampling_rate);
 static void JNICALL OnClassFileLoadHook(
@@ -18,6 +22,10 @@ static void JNICALL OnClassFileLoadHook(
     const unsigned char* class_data,
     jint* new_class_data_len,
     unsigned char** new_class_data);
+static void JNICALL OnSampledObjectAlloc(
+    jvmtiEnv* jvmti, JNIEnv* jni,
+    jthread thread, jobject object,
+    jclass object_klass, jlong size);
 static void JNICALL OnVMDeath(jvmtiEnv* jvmti, JNIEnv* jni);
 static void retransform_already_loaded_classes();
 static bool is_target_class(const char* class_name);
@@ -106,6 +114,7 @@ static jint initialize_agent(JavaVM* vm, char* options, bool is_attach, size_t s
     jvmtiEventCallbacks callbacks;
     std::memset(&callbacks, 0, sizeof(callbacks));
     callbacks.ClassFileLoadHook = &OnClassFileLoadHook;
+    callbacks.SampledObjectAlloc = &OnSampledObjectAlloc;
     callbacks.VMDeath = &OnVMDeath;
 
     result = g_state->jvmti->SetEventCallbacks(&callbacks, sizeof(callbacks));
@@ -118,6 +127,21 @@ static jint initialize_agent(JavaVM* vm, char* options, bool is_attach, size_t s
         JVMTI_ENABLE,
         JVMTI_EVENT_CLASS_FILE_LOAD_HOOK,
         nullptr);
+    if (result != JVMTI_ERROR_NONE) {
+        return JNI_ERR;
+    }
+
+    // Enable SampledObjectAlloc event
+    result = g_state->jvmti->SetEventNotificationMode(
+        JVMTI_ENABLE,
+        JVMTI_EVENT_SAMPLED_OBJECT_ALLOC,
+        nullptr);
+    if (result != JVMTI_ERROR_NONE) {
+        return JNI_ERR;
+    }
+
+    // Set heap sampling interval (in bytes)
+    result = g_state->jvmti->SetHeapSamplingInterval(sampling_rate);
     if (result != JVMTI_ERROR_NONE) {
         return JNI_ERR;
     }
@@ -157,6 +181,29 @@ static void JNICALL OnClassFileLoadHook(
             g_state->transformed_classes.insert(name);
         }
     }
+}
+
+static void JNICALL OnSampledObjectAlloc(
+    jvmtiEnv* jvmti, JNIEnv* jni,
+    jthread thread, jobject object,
+    jclass object_klass, jlong size) {
+
+    if (g_bridge_class == nullptr || g_on_native_alloc_method == nullptr) {
+        return;
+    }
+
+    // Get class signature
+    char* signature;
+    jvmtiError error = jvmti->GetClassSignature(object_klass, &signature, nullptr);
+    if (error != JVMTI_ERROR_NONE) {
+        return;
+    }
+
+    jstring type_string = jni->NewStringUTF(signature);
+    jni->CallStaticVoidMethod(g_bridge_class, g_on_native_alloc_method, (jlong)size, type_string);
+
+    // Free the signature memory
+    jvmti->Deallocate((unsigned char*)signature);
 }
 
 static void JNICALL OnVMDeath(jvmtiEnv* jvmti, JNIEnv* jni) {
@@ -390,6 +437,15 @@ JNIEXPORT jlong JNICALL Java_com_memdiag_nativeimpl_JVMTINativeAnalyzer_getLiveB
         return (jlong)g_state->allocation_tracker->getLiveBytes();
     }
     return 0;
+}
+
+JNIEXPORT void JNICALL Java_com_memdiag_agent_jvmti_JVMTIEventBridge_registerCallbacks(
+    JNIEnv* env, jclass cls) {
+    if (g_bridge_class != nullptr) {
+        env->DeleteGlobalRef(g_bridge_class);
+    }
+    g_bridge_class = (jclass)env->NewGlobalRef(cls);
+    g_on_native_alloc_method = env->GetStaticMethodID(g_bridge_class, "onNativeAllocation", "(JLjava/lang/String;)V");
 }
 
 } // extern "C"
