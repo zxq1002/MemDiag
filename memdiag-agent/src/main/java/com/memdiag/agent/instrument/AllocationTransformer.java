@@ -3,6 +3,7 @@ package com.memdiag.agent.instrument;
 import com.memdiag.agent.AgentConfig;
 import com.memdiag.agent.collect.AllocationEvent;
 import com.memdiag.agent.collect.DataCollector;
+import org.objectweb.asm.*;
 
 import java.lang.instrument.ClassFileTransformer;
 import java.lang.instrument.IllegalClassFormatException;
@@ -10,6 +11,8 @@ import java.security.ProtectionDomain;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.atomic.AtomicLong;
+
+import static org.objectweb.asm.Opcodes.*;
 
 /**
  * ClassFileTransformer for tracking memory allocations.
@@ -71,12 +74,12 @@ public class AllocationTransformer implements ClassFileTransformer {
      * @return true if the class should be transformed
      */
     private boolean shouldTransform(String className) {
-        if (className == null) {
+        if (className == null) return false;
+        // Exclude system/agent classes
+        if (className.startsWith("java/") || className.startsWith("sun/") || className.startsWith("com/memdiag/")) {
             return false;
         }
-        // For now, we don't transform any classes automatically
-        // Future phase will enable ByteBuffer instrumentation
-        return false;
+        return true;
     }
 
     @Override
@@ -84,14 +87,66 @@ public class AllocationTransformer implements ClassFileTransformer {
                             ProtectionDomain protectionDomain, byte[] classfileBuffer)
             throws IllegalClassFormatException {
 
-        // For now, just return null - no automatic instrumentation
-        // Full ASM-based transformation will be added in a future phase
-        if (shouldTransform(className)) {
-            System.out.println("[MemDiag] Would transform (future phase): " + className);
+        if (!shouldTransform(className)) {
+            return null;
         }
 
-        // Return null to indicate no transformation
-        return null;
+        try {
+            ClassReader cr = new ClassReader(classfileBuffer);
+            ClassWriter cw = new ClassWriter(cr, AsmUtils.getClassWriterFlags(cr));
+            AllocationClassVisitor cv = new AllocationClassVisitor(cw, className);
+            cr.accept(cv, ClassReader.EXPAND_FRAMES);
+            return cw.toByteArray();
+        } catch (Exception e) {
+            System.err.println("[MemDiag] Error transforming class " + className + ": " + e.getMessage());
+            return null;
+        }
+    }
+
+    private class AllocationClassVisitor extends ClassVisitor {
+        private final String className;
+        public AllocationClassVisitor(ClassVisitor cv, String className) {
+            super(AsmUtils.getAsmApiVersion(Opcodes.V1_8), cv);
+            this.className = className;
+        }
+
+        @Override
+        public MethodVisitor visitMethod(int access, String name, String descriptor, String signature, String[] exceptions) {
+            MethodVisitor mv = super.visitMethod(access, name, descriptor, signature, exceptions);
+            return new AllocationMethodVisitor(mv);
+        }
+    }
+
+    private class AllocationMethodVisitor extends MethodVisitor {
+        public AllocationMethodVisitor(MethodVisitor mv) {
+            super(AsmUtils.getAsmApiVersion(Opcodes.V1_8), mv);
+        }
+
+        @Override
+        public void visitIntInsn(int opcode, int operand) {
+            super.visitIntInsn(opcode, operand);
+            if (opcode == NEWARRAY) {
+                // Stack: [array_ref]
+                recordArrayAlloc();
+            }
+        }
+
+        @Override
+        public void visitTypeInsn(int opcode, String type) {
+            super.visitTypeInsn(opcode, type);
+            if (opcode == ANEWARRAY) {
+                // Stack: [array_ref]
+                recordArrayAlloc();
+            }
+        }
+
+        private void recordArrayAlloc() {
+            mv.visitInsn(DUP);
+            mv.visitInsn(ARRAYLENGTH);
+            mv.visitInsn(I2L);
+            mv.visitLdcInsn("array"); // Simplified type
+            mv.visitMethodInsn(INVOKESTATIC, "com/memdiag/agent/instrument/MemDiagSpy", "recordAllocation", "(JLjava/lang/String;)V", false);
+        }
     }
 
     /**
