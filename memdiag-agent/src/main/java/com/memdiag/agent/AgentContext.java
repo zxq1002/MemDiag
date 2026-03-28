@@ -1,5 +1,8 @@
 package com.memdiag.agent;
 
+import com.memdiag.agent.collect.DataCollector;
+import com.memdiag.agent.collect.StatsAggregator;
+
 import java.lang.instrument.Instrumentation;
 
 /**
@@ -14,8 +17,11 @@ public class AgentContext {
     private volatile AgentState state;
     private volatile AgentServer server;
 
+    // Data collection components (Phase 3)
+    private volatile DataCollector dataCollector;
+    private volatile StatsAggregator statsAggregator;
+
     // Components to be initialized in later phases
-    private volatile Object dataCollector; // Will be DataCollector
     private volatile Object instrumentManager; // Will be InstrumentManager
     private volatile Object jvmtiLoader; // Will be AgentJVMTILoader
 
@@ -111,15 +117,25 @@ public class AgentContext {
         return server != null && server.isRunning();
     }
 
-    // Component access (for later phases)
+    // Data collection components (Phase 3)
 
-    public void setDataCollector(Object dataCollector) {
+    public void setDataCollector(DataCollector dataCollector) {
         this.dataCollector = dataCollector;
     }
 
-    public Object getDataCollector() {
+    public DataCollector getDataCollector() {
         return dataCollector;
     }
+
+    public void setStatsAggregator(StatsAggregator statsAggregator) {
+        this.statsAggregator = statsAggregator;
+    }
+
+    public StatsAggregator getStatsAggregator() {
+        return statsAggregator;
+    }
+
+    // Component access (for later phases)
 
     public void setInstrumentManager(Object instrumentManager) {
         this.instrumentManager = instrumentManager;

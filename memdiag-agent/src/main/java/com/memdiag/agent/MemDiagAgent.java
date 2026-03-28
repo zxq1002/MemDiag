@@ -1,5 +1,8 @@
 package com.memdiag.agent;
 
+import com.memdiag.agent.collect.DataCollector;
+import com.memdiag.agent.collect.StatsAggregator;
+
 import java.lang.instrument.Instrumentation;
 
 /**
@@ -145,9 +148,17 @@ public class MemDiagAgent {
     }
 
     /**
-     * Initialize optional components (placeholder for future phases).
+     * Initialize optional components.
      */
     private static void initializeOptionalComponents(AgentConfig config, AgentContext context) {
+        // Phase 3: Initialize data collector and stats aggregator
+        System.out.println("[MemDiag] Initializing data collection...");
+        DataCollector dataCollector = new DataCollector(config.getRingBufferSize());
+        StatsAggregator statsAggregator = new StatsAggregator(dataCollector);
+        context.setDataCollector(dataCollector);
+        context.setStatsAggregator(statsAggregator);
+        System.out.println("[MemDiag] Data collection initialized");
+
         // Phase 2: Initialize instrumentation manager (placeholder)
         if (config.isInstrumentationEnabled()) {
             System.out.println("[MemDiag] Instrumentation enabled (to be implemented in Phase 2)");

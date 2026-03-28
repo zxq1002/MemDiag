@@ -2,6 +2,9 @@ package com.memdiag.agent;
 
 import com.google.gson.Gson;
 import com.google.gson.GsonBuilder;
+import com.memdiag.agent.collect.AllocationEvent;
+import com.memdiag.agent.collect.DataCollector;
+import com.memdiag.agent.collect.StatsAggregator;
 import com.memdiag.core.nativeapi.NativeMemoryAnalyzer;
 import com.memdiag.core.nativeapi.NativeMemoryAnalyzerFactory;
 import com.sun.net.httpserver.HttpExchange;
@@ -61,6 +64,13 @@ public class AgentServer {
         server.createContext("/api/v1/agent/status", new AgentStatusHandler());
         server.createContext("/api/v1/agent/config", new AgentConfigHandler());
         server.createContext("/api/v1/agent/metrics", new AgentMetricsHandler());
+
+        // New Phase 3 endpoints - allocation tracking
+        server.createContext("/api/v1/allocations/recent", new AllocationsRecentHandler());
+        server.createContext("/api/v1/allocations/stats", new AllocationsStatsHandler());
+        server.createContext("/api/v1/allocations/top", new AllocationsTopHandler());
+        server.createContext("/api/v1/allocations/rate", new AllocationsRateHandler());
+        server.createContext("/api/v1/allocations/summary", new AllocationsSummaryHandler());
 
         server.start();
         running = true;
@@ -302,6 +312,173 @@ public class AgentServer {
                 Map<String, Object> response = new HashMap<>();
                 response.put("success", true);
                 response.put("data", metrics);
+                response.put("timestamp", System.currentTimeMillis());
+                sendJsonResponse(exchange, response, 200);
+            } catch (Exception e) {
+                sendErrorResponse(exchange, e.getMessage(), 500);
+            }
+        }
+    }
+
+    // ========== Phase 3: Allocation Tracking API Handlers ==========
+
+    private abstract class BaseAllocationHandler implements HttpHandler {
+        protected DataCollector getDataCollector() {
+            if (AgentContext.isInitialized()) {
+                return AgentContext.getInstance().getDataCollector();
+            }
+            return null;
+        }
+
+        protected StatsAggregator getStatsAggregator() {
+            if (AgentContext.isInitialized()) {
+                return AgentContext.getInstance().getStatsAggregator();
+            }
+            return null;
+        }
+
+        protected int getIntParam(HttpExchange exchange, String name, int defaultValue) {
+            String query = exchange.getRequestURI().getQuery();
+            if (query == null) {
+                return defaultValue;
+            }
+            for (String param : query.split("&")) {
+                String[] parts = param.split("=", 2);
+                if (parts.length == 2 && parts[0].equals(name)) {
+                    try {
+                        return Integer.parseInt(parts[1]);
+                    } catch (NumberFormatException e) {
+                        return defaultValue;
+                    }
+                }
+            }
+            return defaultValue;
+        }
+    }
+
+    private class AllocationsRecentHandler extends BaseAllocationHandler {
+        @Override
+        public void handle(HttpExchange exchange) throws IOException {
+            try {
+                DataCollector collector = getDataCollector();
+                Map<String, Object> response = new HashMap<>();
+
+                if (collector != null) {
+                    int limit = getIntParam(exchange, "limit", 100);
+                    response.put("success", true);
+                    response.put("data", collector.getRecentEvents(limit));
+                } else {
+                    response.put("success", false);
+                    response.put("error", "Data collector not available");
+                }
+
+                response.put("timestamp", System.currentTimeMillis());
+                sendJsonResponse(exchange, response, 200);
+            } catch (Exception e) {
+                sendErrorResponse(exchange, e.getMessage(), 500);
+            }
+        }
+    }
+
+    private class AllocationsStatsHandler extends BaseAllocationHandler {
+        @Override
+        public void handle(HttpExchange exchange) throws IOException {
+            try {
+                DataCollector collector = getDataCollector();
+                Map<String, Object> response = new HashMap<>();
+
+                if (collector != null) {
+                    response.put("success", true);
+                    response.put("data", collector.toMap());
+                } else {
+                    response.put("success", false);
+                    response.put("error", "Data collector not available");
+                }
+
+                response.put("timestamp", System.currentTimeMillis());
+                sendJsonResponse(exchange, response, 200);
+            } catch (Exception e) {
+                sendErrorResponse(exchange, e.getMessage(), 500);
+            }
+        }
+    }
+
+    private class AllocationsTopHandler extends BaseAllocationHandler {
+        @Override
+        public void handle(HttpExchange exchange) throws IOException {
+            try {
+                DataCollector collector = getDataCollector();
+                Map<String, Object> response = new HashMap<>();
+
+                if (collector != null) {
+                    int limit = getIntParam(exchange, "limit", 10);
+                    String type = exchange.getRequestURI().getQuery() != null &&
+                            exchange.getRequestURI().getQuery().contains("type=count") ? "count" : "size";
+
+                    response.put("success", true);
+                    if ("count".equals(type)) {
+                        response.put("data", collector.getTopTypesByCount(limit));
+                    } else {
+                        response.put("data", collector.getTopTypesBySize(limit));
+                    }
+                } else {
+                    response.put("success", false);
+                    response.put("error", "Data collector not available");
+                }
+
+                response.put("timestamp", System.currentTimeMillis());
+                sendJsonResponse(exchange, response, 200);
+            } catch (Exception e) {
+                sendErrorResponse(exchange, e.getMessage(), 500);
+            }
+        }
+    }
+
+    private class AllocationsRateHandler extends BaseAllocationHandler {
+        @Override
+        public void handle(HttpExchange exchange) throws IOException {
+            try {
+                StatsAggregator aggregator = getStatsAggregator();
+                Map<String, Object> response = new HashMap<>();
+
+                if (aggregator != null) {
+                    aggregator.takeSnapshot();
+                    int windowSec = getIntParam(exchange, "window", 60);
+                    response.put("success", true);
+
+                    Map<String, Object> data = new HashMap<>();
+                    data.put("currentRateBytesPerSec", aggregator.getCurrentRateBytesPerSec());
+                    data.put("trend", aggregator.getTrend().name());
+                    data.put("windowRates", aggregator.getRateHistory(windowSec));
+                    response.put("data", data);
+                } else {
+                    response.put("success", false);
+                    response.put("error", "Stats aggregator not available");
+                }
+
+                response.put("timestamp", System.currentTimeMillis());
+                sendJsonResponse(exchange, response, 200);
+            } catch (Exception e) {
+                sendErrorResponse(exchange, e.getMessage(), 500);
+            }
+        }
+    }
+
+    private class AllocationsSummaryHandler extends BaseAllocationHandler {
+        @Override
+        public void handle(HttpExchange exchange) throws IOException {
+            try {
+                StatsAggregator aggregator = getStatsAggregator();
+                Map<String, Object> response = new HashMap<>();
+
+                if (aggregator != null) {
+                    response.put("success", true);
+                    response.put("data", aggregator.getSummary());
+                } else {
+                    response.put("success", false);
+                    response.put("error", "Stats aggregator not available");
+                }
+
                 response.put("timestamp", System.currentTimeMillis());
                 sendJsonResponse(exchange, response, 200);
             } catch (Exception e) {
