@@ -1,6 +1,8 @@
 package com.memdiag.agent.instrument;
 
 import com.memdiag.agent.AgentConfig;
+import org.objectweb.asm.*;
+import org.objectweb.asm.commons.AdviceAdapter;
 
 import java.lang.instrument.ClassFileTransformer;
 import java.lang.instrument.IllegalClassFormatException;
@@ -11,6 +13,8 @@ import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicLong;
+
+import static org.objectweb.asm.Opcodes.*;
 
 /**
  * ClassFileTransformer for monitoring method invocations.
@@ -115,17 +119,55 @@ public class MethodMonitorTransformer implements ClassFileTransformer {
 
     @Override
     public byte[] transform(ClassLoader loader, String className, Class<?> classBeingRedefined,
-                            ProtectionDomain protectionDomain, byte[] classfileBuffer)
-            throws IllegalClassFormatException {
+                            ProtectionDomain protectionDomain, byte[] classfileBuffer) {
+        if (!shouldTransform(className)) return null;
 
-        // For now, we disable automatic instrumentation to avoid complexity
-        // Full ASM-based transformation will be added in a future phase
-        if (shouldTransform(className)) {
-            System.out.println("[MemDiag] Would instrument (future phase): " + className);
+        try {
+            ClassReader cr = new ClassReader(classfileBuffer);
+            ClassWriter cw = new ClassWriter(cr, ClassWriter.COMPUTE_FRAMES);
+            cr.accept(new ClassVisitor(AsmUtils.getAsmApiVersion(Opcodes.V1_8), cw) {
+                @Override
+                public MethodVisitor visitMethod(int access, String name, String desc, String sig, String[] exc) {
+                    MethodVisitor mv = super.visitMethod(access, name, desc, sig, exc);
+                    return new AdviceAdapter(AsmUtils.getAsmApiVersion(Opcodes.V1_8), mv, access, name, desc) {
+                        private int startTimeId;
+
+                        @Override
+                        protected void onMethodEnter() {
+                            mv.visitMethodInsn(INVOKESTATIC, "java/lang/System", "nanoTime", "()J", false);
+                            startTimeId = newLocal(Type.LONG_TYPE);
+                            mv.visitVarInsn(LSTORE, startTimeId);
+
+                            mv.visitLdcInsn(className);
+                            mv.visitLdcInsn(name);
+                            mv.visitLdcInsn(desc);
+                            mv.visitMethodInsn(INVOKESTATIC, "com/memdiag/agent/instrument/MemDiagSpy", "recordMethodEntry", "(Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;)V", false);
+                        }
+
+                        @Override
+                        protected void onMethodExit(int opcode) {
+                            if (opcode != ATHROW) {
+                                recordExit();
+                            }
+                        }
+
+                        private void recordExit() {
+                            mv.visitLdcInsn(className);
+                            mv.visitLdcInsn(name);
+                            mv.visitLdcInsn(desc);
+                            mv.visitMethodInsn(INVOKESTATIC, "java/lang/System", "nanoTime", "()J", false);
+                            mv.visitVarInsn(LLOAD, startTimeId);
+                            mv.visitInsn(LSUB);
+                            mv.visitMethodInsn(INVOKESTATIC, "com/memdiag/agent/instrument/MemDiagSpy", "recordMethodExit", "(Ljava/lang/String;Ljava/lang/String;Ljava/lang/String;J)V", false);
+                        }
+                    };
+                }
+            }, ClassReader.EXPAND_FRAMES);
+            return cw.toByteArray();
+        } catch (Exception e) {
+            System.err.println("[MemDiag] Error transforming class for method monitoring " + className + ": " + e.getMessage());
+            return null;
         }
-
-        // Return null to indicate no transformation
-        return null;
     }
 
     // ========== The rest is the same as before (stats recording) ==========
