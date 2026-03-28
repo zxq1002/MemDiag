@@ -64,18 +64,23 @@ public class JVMTINativeAnalyzer implements NativeMemoryAnalyzer {
         return true;
     }
 
-    @Override
-    public boolean isAgentAttached() {
+    private boolean isAgentAttachedNative() {
         try {
-            return isAgentAttached0() || agentAttached;
+            return isAgentAttached0();
         } catch (UnsatisfiedLinkError e) {
-            return agentAttached;
+            return false;
         }
     }
 
     @Override
+    public boolean isAgentAttached() {
+        return isAgentAttachedNative() || agentAttached;
+    }
+
+    @Override
     public boolean attachAgent() {
-        if (agentAttached) {
+        if (isAgentAttachedNative()) {
+            agentAttached = true;
             return true;
         }
         try {
@@ -91,7 +96,7 @@ public class JVMTINativeAnalyzer implements NativeMemoryAnalyzer {
 
     @Override
     public boolean detachAgent() {
-        if (!agentAttached) {
+        if (!isAgentAttached() && !agentAttached) {
             return true;
         }
         try {
@@ -109,7 +114,7 @@ public class JVMTINativeAnalyzer implements NativeMemoryAnalyzer {
     }
 
     public boolean startAllocationTracking() {
-        if (!agentAttached) {
+        if (!isAgentAttached()) {
             return false;
         }
         try {
@@ -124,9 +129,6 @@ public class JVMTINativeAnalyzer implements NativeMemoryAnalyzer {
     }
 
     public boolean stopAllocationTracking() {
-        if (!trackingEnabled) {
-            return true;
-        }
         try {
             if (stopAllocationTracking0()) {
                 trackingEnabled = false;
@@ -140,6 +142,7 @@ public class JVMTINativeAnalyzer implements NativeMemoryAnalyzer {
     }
 
     public boolean isTrackingEnabled() {
+        // For now, just return the local flag - native method would be needed to check actual state
         return trackingEnabled;
     }
 

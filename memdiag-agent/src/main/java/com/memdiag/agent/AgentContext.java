@@ -2,6 +2,7 @@ package com.memdiag.agent;
 
 import com.memdiag.agent.collect.DataCollector;
 import com.memdiag.agent.collect.StatsAggregator;
+import com.memdiag.agent.instrument.InstrumentManager;
 import com.memdiag.agent.jvmti.AgentJVMTILoader;
 
 import java.lang.instrument.Instrumentation;
@@ -22,11 +23,11 @@ public class AgentContext {
     private volatile DataCollector dataCollector;
     private volatile StatsAggregator statsAggregator;
 
+    // Instrumentation components (Phase 2)
+    private volatile InstrumentManager instrumentManager;
+
     // JVMTI components (Phase 4)
     private volatile AgentJVMTILoader jvmtiLoader;
-
-    // Components to be initialized in later phases
-    private volatile Object instrumentManager; // Will be InstrumentManager
 
     private long startTime;
 
@@ -140,11 +141,11 @@ public class AgentContext {
 
     // Component access (for later phases)
 
-    public void setInstrumentManager(Object instrumentManager) {
+    public void setInstrumentManager(InstrumentManager instrumentManager) {
         this.instrumentManager = instrumentManager;
     }
 
-    public Object getInstrumentManager() {
+    public InstrumentManager getInstrumentManager() {
         return instrumentManager;
     }
 

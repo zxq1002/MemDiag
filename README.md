@@ -440,22 +440,23 @@ DiagnosisEngine engine = new DiagnosisEngine(
 
 #### 功能说明
 
-- **两种模式**：
-  - **Agent 模式（推荐）**：目标 JVM 加载 `memdiag-agent.jar`，通过 HTTP API 通信
-  - **ProcFS 模式（基础）**：CLI 直接解析 `/proc` 文件系统，无侵入
+- 通过 `/proc` 文件系统分析堆外内存
 - 显示虚拟内存和物理内存使用
 - 识别内存区域和加载的库
 - 检测堆外内存泄漏
 
-#### 两种模式对比
+**注意**：本命令在整体的两种使用模式（JMX 模式 / Agent 模式）下都能工作：
+- **JMX 模式（默认）**：CLI 直接读取本地 `/proc`（仅同一机器时可用）
+- **Agent 模式（`--agent`）**：Agent 在目标 JVM 读取 `/proc`，通过 HTTP 返回（支持跨机器）
 
-| 特性 | Agent 模式（推荐） | ProcFS 模式（基础） |
-|------|-------------------|-------------------|
-| **需要 Agent** | ✅ 是（memdiag-agent.jar） | ❌ 否 |
-| **数据来源** | Agent 内部 HTTP API | /proc 文件系统 |
-| **状态保持** | ✅ 跨 CLI 调用保持 | ❌ 每次独立 |
-| **功能范围** | 完整功能（含未来增强） | 仅基础功能 |
-| **对目标影响** | Agent 启动时轻微影响 | 无影响 |
+#### 在两种使用模式下的差异
+
+| 特性 | JMX 模式（默认） | Agent 模式（`--agent`） |
+|------|-----------------|---------------------|
+| **数据来源** | CLI 直接读本地 `/proc` | Agent 读 `/proc` + HTTP |
+| **跨机器** | ❌ 仅同一机器 | ✅ 支持远程 |
+| **状态保持** | ❌ 每次独立 | ✅ Agent 保持状态 |
+| **对目标影响** | 无影响 | Agent 运行时轻微影响 |
 
 #### ⚠️ 对目标进程的影响
 
@@ -481,16 +482,16 @@ DiagnosisEngine engine = new DiagnosisEngine(
 | `--agent-port` | Agent HTTP 服务端口 | 6789 |
 | `--agent-jar` | memdiag-agent.jar 路径（用于动态 attach） | - |
 
-#### Agent 模式（推荐）
+#### 使用 Agent 模式（推荐）
 
 **方式一：启动时加载（推荐用于生产环境）**
 ```bash
 # 在目标 JVM 启动时加载 Agent
 java -javaagent:memdiag-agent.jar=port=6789 -jar your-app.jar
 
-# 然后 CLI 会自动检测并连接到 Agent
-memdiag native --status --pid 12345
-memdiag native --summary --pid 12345
+# 然后通过 --agent 选项连接
+memdiag native --status --agent=localhost:6789
+memdiag native --summary --agent=localhost:6789
 ```
 
 **方式二：动态 attach（推荐用于测试/调试）**
@@ -504,9 +505,6 @@ memdiag native --summary --agent=localhost:6789
 memdiag native --regions --agent=localhost:6789
 memdiag native --diagnose --agent=localhost:6789
 
-# 或者，如果 Agent 在默认端口运行，CLI 会自动检测并使用 Agent 模式
-memdiag native --status --pid 12345
-
 # detach Agent
 memdiag native --detach --agent=localhost:6789
 ```
@@ -514,18 +512,17 @@ memdiag native --detach --agent=localhost:6789
 **重要提示**：
 - Attach 成功后，Agent 会在目标 JVM 内启动 HTTP 服务（默认端口 6789）
 - 建议使用 `--agent=localhost:6789` 选项明确指定连接 Agent
-- 如果不使用 `--agent` 选项，CLI 会先尝试连接默认端口的 Agent，如果不可用则回退到 ProcFS 模式
 - 所有其他命令（histogram、threads、diagnose 等）也支持 `--agent` 选项
 
 **Agent 模式优势**：
 - Agent 运行在目标 JVM 内部，数据更准确
+- 支持跨机器调用
 - 支持跨 CLI 调用保持状态
 - 通过 HTTP API 通信，更稳定
-- 自动降级：如果 Agent 不可用，自动回退到 ProcFS 基础功能
 
-#### ProcFS 模式（基础）
+#### 使用 JMX 模式（默认，无需 Agent）
 
-如果没有加载 Agent，CLI 会自动使用 ProcFS 模式：
+如果没有加载 Agent，CLI 会直接读取本地 `/proc`（仅限同一机器）：
 
 ```bash
 # 直接解析 /proc 文件系统（无需 Agent）
@@ -574,14 +571,16 @@ Mode: Agent Mode (HTTP API)
 Agent Connected: ✅ Yes
 Agent Endpoint: localhost:6789
 
-AVAILABLE MODES:
-  ✅ Agent Mode (recommended) - Use memdiag-agent.jar for full features
+USAGE OPTIONS:
+  ✅ With --agent (recommended) - Connect to running memdiag-agent.jar
      - Start target JVM with: java -javaagent:memdiag-agent.jar=port=6789 ...
      - Or attach dynamically: memdiag native --attach --agent-jar <path> --pid <pid>
+     - Use with: memdiag native --status --agent=localhost:6789
 
-  ✅ ProcFS Mode (basic) - Read-only /proc filesystem analysis
+  ✅ Without --agent (default) - Direct local /proc filesystem access
      - No agent required
-     - Limited to status/summary/regions/diagnose
+     - Limited to same machine
+     - Use with: memdiag native --status --pid 12345
 ```
 
 #### 输出示例 - 内存摘要
@@ -610,10 +609,11 @@ Total: 127 regions
 
 #### 实现原理
 
-`NativeCommand` 使用两层实现：
-1. **AgentNativeAnalyzer**：通过 HTTP 与 `memdiag-agent.jar` 通信（推荐）
-   - Agent 内部可选加载 JVMTI 原生库进行增强
-2. **ProcFileSystemNativeAnalyzer**：解析 `/proc/<pid>/maps` 和 `/proc/<pid>/smaps` 获取内存区域信息（无侵入，基础回退）
+`NativeCommand` 根据是否使用 `--agent` 选项选择不同实现：
+- **使用 `--agent`**：`AgentNativeAnalyzer` 通过 HTTP 与 `memdiag-agent.jar` 通信
+- **不使用 `--agent`**：`ProcFileSystemNativeAnalyzer` 直接解析 `/proc/<pid>/maps` 和 `/proc/<pid>/smaps`（无侵入，仅同一机器可用）
+
+Agent 内部未来可选加载 JVMTI 原生库进行增强
 
 ---
 
@@ -950,6 +950,87 @@ memdiag nmt --pid 12345
 
 ## 架构与实现原理
 
+### 两种使用模式
+
+MemDiag 提供**两种使用模式**，通过 `--agent` 选项切换：
+
+| 特性 | JMX 模式（默认） | Agent 模式（`--agent`） |
+|------|-----------------|---------------------|
+| **触发方式** | 不指定 `--agent` | 指定 `--agent host:port` |
+| **技术基础** | JMX Attach API | Java Agent + HTTP API |
+| **目标 JVM 要求** | 任何 HotSpot JVM | 需要加载 `memdiag-agent.jar` |
+| **预先配置** | 无需配置 | 启动时 `-javaagent:` 或动态 attach |
+| **网络暴露** | 无（本地进程通信） | 默认 localhost:6789 |
+| **跨机器分析** | ❌ 仅本地 | ✅ 支持 |
+| **状态保持** | ❌ 每次重新连接 | ✅ Agent 保持状态 |
+| **堆内存/线程分析** | ✅ | ✅ |
+| **堆外内存分析** | ✅（同一机器）| ✅（远程也可）|
+| **字节码插桩** | ❌ | ⏳ 框架已就绪 |
+| **JVMTI 事件** | ❌ | ⏳ 框架已就绪 |
+
+---
+
+### 关键概念澄清
+
+#### 1. JMX 模式工作原理
+
+JMX 模式**不依赖 Agent 注入**，也无需目标 JVM 预先配置：
+
+```
+memdiag-cli (JDK)
+    │
+    │ 1. VirtualMachine.attach(pid)
+    │    ↓ (使用 tools.jar 的 Attach API)
+    │ 2. 动态加载 Management Agent（如未启动）
+    │    ↓
+    │ 3. 获取本地 JMX 连接器地址
+    │    ↓
+    │ 4. 通过 JMX 协议通信（本地，不暴露网络）
+    ↓
+目标 JVM (任何 HotSpot JVM)
+    ├─ java.lang:type=Memory
+    ├─ java.lang:type=Threading
+    └─ com.sun.management:type=HotSpotDiagnostic
+```
+
+**JMX 模式要求**：
+- ✅ CLI 运行在 JDK（非 JRE）
+- ✅ 与目标 JVM 同一用户
+- ✅ 目标 JVM 是 HotSpot（大多数 JVM 都是）
+
+---
+
+#### 2. ProcFS 不是独立模式
+
+`/proc` 文件系统是**数据来源**，不是独立模式：
+- **JMX 模式**：CLI 直接读取本地 `/proc`（仅同一机器时可用）
+- **Agent 模式**：Agent 在目标 JVM 本地读取 `/proc`，通过 HTTP 返回给 CLI
+
+---
+
+#### 3. JVMTI 的角色
+
+- JVMTI 是 JVM 提供的原生层工具接口
+- 当前版本：**框架已就绪，功能未启用**
+- 未来计划：Agent 模式可自动检测并加载 `libmemdiag-agent.so`（JVMTI 库）
+- **没有独立的 `libmemdiag.so`**：只有 `libmemdiag-agent.so`
+
+---
+
+#### 4. Agent 模式当前能力（v1.0）
+
+| 能力 | 状态 |
+|-----|------|
+| HTTP API 服务（端口 6789） | ✅ |
+| 堆直方图、线程分析、诊断报告 | ✅ |
+| ProcFS 堆外内存分析 | ✅ |
+| 分配追踪 API 框架 | ✅ |
+| 方法监控 API 框架 | ✅ |
+| 实际字节码插桩 | ❌ 待实现 |
+| JVMTI 原生事件监听 | ❌ 待实现 |
+
+---
+
 ### 整体架构
 
 ```
@@ -961,28 +1042,34 @@ memdiag nmt --pid 12345
 │  ┌──────────────┐  ┌──────────────┐  ┌──────────────┐     │
 │  │  NativeCmd   │  │ SnapshotCmd  │  │   DiffCmd    │     │
 │  └──────────────┘  └──────────────┘  └──────────────┘     │
+│                                                               │
+│  使用模式选择：                                                │
+│  ├─ 不指定 --agent  →  JMX 模式                            │
+│  └─ 指定 --agent    →  Agent 模式                           │
 └─────────────────────────────────────────────────────────────────┘
                               │
-                              ▼
-┌─────────────────────────────────────────────────────────────────┐
-│                       memdiag-core                              │
-│  ┌─────────────────┐  ┌─────────────────┐  ┌──────────────┐ │
-│  │  JmxHeapAnalyzer│  │  ThreadAnalyzer  │  │DiagnosisEngin│ │
-│  └─────────────────┘  └─────────────────┘  └──────────────┘ │
-│  ┌─────────────────┐  ┌─────────────────┐  ┌──────────────┐ │
-│  │   HeapDiff      │  │ SnapshotManager │  │     Nmt      │ │
-│  └─────────────────┘  └─────────────────┘  └──────────────┘ │
-│  ┌──────────────────────────────────────────────────────────┐  │
-│  │              JmxClient (JMX 连接器)                     │  │
-│  └──────────────────────────────────────────────────────────┘  │
-└─────────────────────────────────────────────────────────────────┘
-                              │
-         ┌────────────────────┼────────────────────┐
-         ▼                    ▼                    ▼
-┌──────────────────┐ ┌──────────────────┐ ┌──────────────────┐
-│   目标 JVM       │ │  memdiag-native  │ │  memdiag-agent   │
-│  (JMX Attach)    │ │  (JVMTI Agent)   │ │  (Remote Agent)  │
-└──────────────────┘ └──────────────────┘ └──────────────────┘
+         ┌────────────────────┴────────────────────┐
+         ▼                                         ▼
+┌─────────────────────────┐           ┌─────────────────────────┐
+│      JMX 模式          │           │     Agent 模式          │
+│                         │           │                         │
+│  memdiag-core          │           │  memdiag-core          │
+│  ┌─────────────────┐  │           │  ┌─────────────────┐  │
+│  │  JmxClient     │  │           │  │  AgentClient    │  │
+│  │  (Attach API)  │  │           │  │  (HTTP)         │  │
+│  └─────────────────┘  │           │  └─────────────────┘  │
+└─────────────────────────┘           └─────────────────────────┘
+         │                                         │
+         ▼                                         ▼
+┌──────────────────┐                    ┌─────────────────────────┐
+│   目标 JVM       │                    │  memdiag-agent.jar    │
+│  (HotSpot JVM)  │                    │  (在目标 JVM 内运行)  │
+│                  │                    └─────────────────────────┘
+│  内置 MBeans:    │                               │
+│  - Memory        │                               ▼
+│  - Threading     │                    ┌──────────────────┐
+│  - HotSpotDiagnostic│               │    目标 JVM      │
+└──────────────────┘                    └──────────────────┘
 ```
 
 ### 核心模块说明

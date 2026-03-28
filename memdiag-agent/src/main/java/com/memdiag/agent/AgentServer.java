@@ -5,6 +5,8 @@ import com.google.gson.GsonBuilder;
 import com.memdiag.agent.collect.AllocationEvent;
 import com.memdiag.agent.collect.DataCollector;
 import com.memdiag.agent.collect.StatsAggregator;
+import com.memdiag.agent.instrument.InstrumentManager;
+import com.memdiag.agent.instrument.MethodMonitorTransformer;
 import com.memdiag.agent.jvmti.AgentJVMTILoader;
 import com.memdiag.core.diagnose.DiagnosisEngine;
 import com.memdiag.core.diagnose.DiagnosisResult;
@@ -109,6 +111,15 @@ public class AgentServer {
 
         // New Phase 4 endpoints - JVMTI
         server.createContext("/api/v1/jvmti/status", new JVMTIStatusHandler());
+
+        // New Phase 3 endpoints - method monitoring
+        server.createContext("/api/v1/methods/stats", new MethodsStatsHandler());
+        server.createContext("/api/v1/methods/slow", new MethodsSlowHandler());
+        server.createContext("/api/v1/instrumentation/status", new InstrumentationStatusHandler());
+        server.createContext("/api/v1/instrumentation/allocation/enable", new EnableAllocationTrackingHandler());
+        server.createContext("/api/v1/instrumentation/allocation/disable", new DisableAllocationTrackingHandler());
+        server.createContext("/api/v1/instrumentation/methods/enable", new EnableMethodMonitoringHandler());
+        server.createContext("/api/v1/instrumentation/methods/disable", new DisableMethodMonitoringHandler());
 
         server.start();
         running = true;
@@ -806,5 +817,247 @@ public class AgentServer {
             }
         }
         return defaultValue;
+    }
+
+    // ========== Phase 3: Method Monitoring API Handlers ==========
+
+    private abstract class BaseMethodHandler implements HttpHandler {
+        protected MethodMonitorTransformer getMethodMonitorTransformer() {
+            if (AgentContext.isInitialized()) {
+                Object manager = AgentContext.getInstance().getInstrumentManager();
+                if (manager instanceof InstrumentManager) {
+                    return ((InstrumentManager) manager).getMethodMonitorTransformer();
+                }
+            }
+            return null;
+        }
+
+        protected InstrumentManager getInstrumentManager() {
+            if (AgentContext.isInitialized()) {
+                Object manager = AgentContext.getInstance().getInstrumentManager();
+                if (manager instanceof InstrumentManager) {
+                    return (InstrumentManager) manager;
+                }
+            }
+            return null;
+        }
+    }
+
+    private class MethodsStatsHandler extends BaseMethodHandler {
+        @Override
+        public void handle(HttpExchange exchange) throws IOException {
+            try {
+                MethodMonitorTransformer transformer = getMethodMonitorTransformer();
+                Map<String, Object> response = new HashMap<>();
+
+                if (transformer != null) {
+                    int limit = getIntParam(exchange, "limit", 20);
+                    response.put("success", true);
+                    response.put("data", transformer.toMap(limit));
+                } else {
+                    response.put("success", false);
+                    response.put("error", "Method monitor transformer not available");
+                }
+
+                response.put("timestamp", System.currentTimeMillis());
+                sendJsonResponse(exchange, response, 200);
+            } catch (Exception e) {
+                sendErrorResponse(exchange, e.getMessage(), 500);
+            }
+        }
+    }
+
+    private class MethodsSlowHandler extends BaseMethodHandler {
+        @Override
+        public void handle(HttpExchange exchange) throws IOException {
+            try {
+                MethodMonitorTransformer transformer = getMethodMonitorTransformer();
+                Map<String, Object> response = new HashMap<>();
+
+                if (transformer != null) {
+                    long thresholdMs = getIntParam(exchange, "threshold", 100);
+                    int limit = getIntParam(exchange, "limit", 10);
+
+                    List<Map<String, Object>> slowMethods = new ArrayList<>();
+                    for (MethodMonitorTransformer.MethodStats stats : transformer.getTopMethodsByTotalTime(limit)) {
+                        if (stats.getAverageTimeNanos() >= thresholdMs * 1_000_000L) {
+                            slowMethods.add(stats.toMap());
+                        }
+                    }
+
+                    response.put("success", true);
+                    response.put("data", slowMethods);
+                } else {
+                    response.put("success", false);
+                    response.put("error", "Method monitor transformer not available");
+                }
+
+                response.put("timestamp", System.currentTimeMillis());
+                sendJsonResponse(exchange, response, 200);
+            } catch (Exception e) {
+                sendErrorResponse(exchange, e.getMessage(), 500);
+            }
+        }
+    }
+
+    private class InstrumentationStatusHandler extends BaseMethodHandler {
+        @Override
+        public void handle(HttpExchange exchange) throws IOException {
+            try {
+                InstrumentManager manager = getInstrumentManager();
+                Map<String, Object> response = new HashMap<>();
+
+                if (manager != null) {
+                    response.put("success", true);
+                    response.put("data", manager.toMap());
+                } else {
+                    Map<String, Object> status = new HashMap<>();
+                    status.put("initialized", false);
+                    status.put("message", "Instrument manager not available");
+                    if (AgentContext.isInitialized()) {
+                        status.put("configEnabled", AgentContext.getInstance().getConfig().isInstrumentationEnabled());
+                    }
+                    response.put("success", true);
+                    response.put("data", status);
+                }
+
+                response.put("timestamp", System.currentTimeMillis());
+                sendJsonResponse(exchange, response, 200);
+            } catch (Exception e) {
+                sendErrorResponse(exchange, e.getMessage(), 500);
+            }
+        }
+    }
+
+    private class EnableAllocationTrackingHandler extends BaseMethodHandler {
+        @Override
+        public void handle(HttpExchange exchange) throws IOException {
+            if (!"POST".equals(exchange.getRequestMethod())) {
+                sendErrorResponse(exchange, "Method not allowed", 405);
+                return;
+            }
+
+            try {
+                InstrumentManager manager = getInstrumentManager();
+                Map<String, Object> response = new HashMap<>();
+
+                if (manager != null) {
+                    boolean success = manager.enableAllocationTracking();
+                    response.put("success", success);
+                    if (success) {
+                        response.put("message", "Allocation tracking enabled");
+                    } else {
+                        response.put("error", "Failed to enable allocation tracking");
+                    }
+                } else {
+                    response.put("success", false);
+                    response.put("error", "Instrument manager not available");
+                }
+
+                response.put("timestamp", System.currentTimeMillis());
+                sendJsonResponse(exchange, response, 200);
+            } catch (Exception e) {
+                sendErrorResponse(exchange, e.getMessage(), 500);
+            }
+        }
+    }
+
+    private class DisableAllocationTrackingHandler extends BaseMethodHandler {
+        @Override
+        public void handle(HttpExchange exchange) throws IOException {
+            if (!"POST".equals(exchange.getRequestMethod())) {
+                sendErrorResponse(exchange, "Method not allowed", 405);
+                return;
+            }
+
+            try {
+                InstrumentManager manager = getInstrumentManager();
+                Map<String, Object> response = new HashMap<>();
+
+                if (manager != null) {
+                    boolean success = manager.disableAllocationTracking();
+                    response.put("success", success);
+                    if (success) {
+                        response.put("message", "Allocation tracking disabled");
+                    } else {
+                        response.put("error", "Failed to disable allocation tracking");
+                    }
+                } else {
+                    response.put("success", false);
+                    response.put("error", "Instrument manager not available");
+                }
+
+                response.put("timestamp", System.currentTimeMillis());
+                sendJsonResponse(exchange, response, 200);
+            } catch (Exception e) {
+                sendErrorResponse(exchange, e.getMessage(), 500);
+            }
+        }
+    }
+
+    private class EnableMethodMonitoringHandler extends BaseMethodHandler {
+        @Override
+        public void handle(HttpExchange exchange) throws IOException {
+            if (!"POST".equals(exchange.getRequestMethod())) {
+                sendErrorResponse(exchange, "Method not allowed", 405);
+                return;
+            }
+
+            try {
+                InstrumentManager manager = getInstrumentManager();
+                Map<String, Object> response = new HashMap<>();
+
+                if (manager != null) {
+                    boolean success = manager.enableMethodMonitoring();
+                    response.put("success", success);
+                    if (success) {
+                        response.put("message", "Method monitoring enabled");
+                    } else {
+                        response.put("error", "Failed to enable method monitoring");
+                    }
+                } else {
+                    response.put("success", false);
+                    response.put("error", "Instrument manager not available");
+                }
+
+                response.put("timestamp", System.currentTimeMillis());
+                sendJsonResponse(exchange, response, 200);
+            } catch (Exception e) {
+                sendErrorResponse(exchange, e.getMessage(), 500);
+            }
+        }
+    }
+
+    private class DisableMethodMonitoringHandler extends BaseMethodHandler {
+        @Override
+        public void handle(HttpExchange exchange) throws IOException {
+            if (!"POST".equals(exchange.getRequestMethod())) {
+                sendErrorResponse(exchange, "Method not allowed", 405);
+                return;
+            }
+
+            try {
+                InstrumentManager manager = getInstrumentManager();
+                Map<String, Object> response = new HashMap<>();
+
+                if (manager != null) {
+                    boolean success = manager.disableMethodMonitoring();
+                    response.put("success", success);
+                    if (success) {
+                        response.put("message", "Method monitoring disabled");
+                    } else {
+                        response.put("error", "Failed to disable method monitoring");
+                    }
+                } else {
+                    response.put("success", false);
+                    response.put("error", "Instrument manager not available");
+                }
+
+                response.put("timestamp", System.currentTimeMillis());
+                sendJsonResponse(exchange, response, 200);
+            } catch (Exception e) {
+                sendErrorResponse(exchange, e.getMessage(), 500);
+            }
+        }
     }
 }

@@ -186,6 +186,59 @@ public class AgentClient {
         return get("/api/v1/allocations/summary");
     }
 
+    // ========== Phase 3: Methods API ==========
+
+    /**
+     * Get method statistics.
+     */
+    public JsonObject getMethodsStats(int limit) {
+        return get("/api/v1/methods/stats?limit=" + limit);
+    }
+
+    /**
+     * Get slow methods.
+     */
+    public JsonObject getMethodsSlow(int limit, int thresholdMs) {
+        return get("/api/v1/methods/slow?limit=" + limit + "&threshold=" + thresholdMs);
+    }
+
+    // ========== Phase 3: Instrumentation API ==========
+
+    /**
+     * Get instrumentation status.
+     */
+    public JsonObject getInstrumentationStatus() {
+        return get("/api/v1/instrumentation/status");
+    }
+
+    /**
+     * Enable allocation tracking.
+     */
+    public JsonObject enableAllocationTracking() {
+        return post("/api/v1/instrumentation/allocation/enable");
+    }
+
+    /**
+     * Disable allocation tracking.
+     */
+    public JsonObject disableAllocationTracking() {
+        return post("/api/v1/instrumentation/allocation/disable");
+    }
+
+    /**
+     * Enable method monitoring.
+     */
+    public JsonObject enableMethodMonitoring() {
+        return post("/api/v1/instrumentation/methods/enable");
+    }
+
+    /**
+     * Disable method monitoring.
+     */
+    public JsonObject disableMethodMonitoring() {
+        return post("/api/v1/instrumentation/methods/disable");
+    }
+
     // ========== Phase 4: JVMTI API ==========
 
     /**
@@ -195,7 +248,10 @@ public class AgentClient {
         return get("/api/v1/jvmti/status");
     }
 
-    private JsonObject get(String path) {
+    /**
+     * Get raw response as string.
+     */
+    public String getRaw(String path) {
         try {
             URL url = URI.create(buildUrl(path)).toURL();
             HttpURLConnection connection = (HttpURLConnection) url.openConnection();
@@ -215,9 +271,71 @@ public class AgentClient {
                 while ((line = reader.readLine()) != null) {
                     response.append(line);
                 }
-                return JsonParser.parseString(response.toString()).getAsJsonObject();
+                return response.toString();
             }
         } catch (IOException e) {
+            return null;
+        }
+    }
+
+    /**
+     * Post raw data and get string response.
+     */
+    public String postRaw(String path, String body) {
+        try {
+            URL url = URI.create(buildUrl(path)).toURL();
+            HttpURLConnection connection = (HttpURLConnection) url.openConnection();
+            connection.setRequestMethod("POST");
+            connection.setRequestProperty("Content-Type", "application/json");
+            connection.setDoOutput(true);
+            connection.setConnectTimeout(5000);
+            connection.setReadTimeout(5000);
+
+            if (body != null && !body.isEmpty()) {
+                try (OutputStream os = connection.getOutputStream()) {
+                    os.write(body.getBytes("UTF-8"));
+                }
+            }
+
+            int responseCode = connection.getResponseCode();
+            if (responseCode != 200) {
+                return null;
+            }
+
+            try (BufferedReader reader = new BufferedReader(
+                    new InputStreamReader(connection.getInputStream(), "UTF-8"))) {
+                StringBuilder response = new StringBuilder();
+                String line;
+                while ((line = reader.readLine()) != null) {
+                    response.append(line);
+                }
+                return response.toString();
+            }
+        } catch (IOException e) {
+            return null;
+        }
+    }
+
+    private JsonObject get(String path) {
+        String raw = getRaw(path);
+        if (raw == null) {
+            return null;
+        }
+        try {
+            return JsonParser.parseString(raw).getAsJsonObject();
+        } catch (Exception e) {
+            return null;
+        }
+    }
+
+    private JsonObject post(String path) {
+        String raw = postRaw(path, "");
+        if (raw == null) {
+            return null;
+        }
+        try {
+            return JsonParser.parseString(raw).getAsJsonObject();
+        } catch (Exception e) {
             return null;
         }
     }

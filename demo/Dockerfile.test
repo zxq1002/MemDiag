@@ -14,6 +14,7 @@ WORKDIR /app
 
 # 拷贝项目编译产物 (使用 shaded jar)
 COPY memdiag-cli/target/memdiag-cli-1.0.0-SNAPSHOT.jar /app/memdiag-cli.jar
+COPY memdiag-agent/target/memdiag-agent-1.0.0-SNAPSHOT.jar /app/memdiag-agent.jar
 
 # 拷贝并编译 Demo
 COPY demo/MemDiagDemo.java /app/

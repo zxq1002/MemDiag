@@ -16,6 +16,8 @@ import java.util.Set;
         mixinStandardHelpOptions = true,
         subcommands = {AgentCommand.StatusCommand.class, AgentCommand.ConfigCommand.class,
                 AgentCommand.MetricsCommand.class, AgentCommand.AllocationsCommand.class,
+                AgentCommand.MethodsCommand.class,
+                AgentCommand.EnableCommand.class, AgentCommand.DisableCommand.class,
                 AgentCommand.JVMTICommand.class})
 public class AgentCommand {
 
@@ -204,6 +206,176 @@ public class AgentCommand {
 
             JsonObject jvmtiStatus = client.getJvmtiStatus();
             parent.printJson(jvmtiStatus);
+        }
+    }
+
+    /**
+     * Subcommand: agent methods
+     */
+    @CommandLine.Command(name = "methods", description = "Show method statistics")
+    public static class MethodsCommand implements Runnable {
+        @CommandLine.ParentCommand
+        private AgentCommand parent;
+
+        @CommandLine.Option(names = {"--stats"}, description = "Show method statistics")
+        private boolean stats;
+
+        @CommandLine.Option(names = {"--slow"}, description = "Show slow methods")
+        private boolean slow;
+
+        @CommandLine.Option(names = {"-l", "--limit"}, defaultValue = "20", description = "Limit number of results")
+        private int limit = 20;
+
+        @CommandLine.Option(names = {"--threshold"}, defaultValue = "100", description = "Threshold in ms for slow methods")
+        private int threshold = 100;
+
+        @Override
+        public void run() {
+            System.out.println("METHOD ANALYSIS");
+            System.out.println("=".repeat(80));
+
+            AgentClient client = parent.createClient();
+
+            if (!client.isReachable()) {
+                System.err.println("❌ Agent not reachable");
+                return;
+            }
+
+            JsonObject response;
+            if (slow) {
+                response = client.getMethodsSlow(limit, threshold);
+            } else if (stats) {
+                response = client.getMethodsStats(limit);
+            } else {
+                // Default: show stats
+                response = client.getMethodsStats(limit);
+            }
+
+            parent.printJson(response);
+        }
+    }
+
+    /**
+     * Subcommand: agent enable
+     */
+    @CommandLine.Command(name = "enable", description = "Enable instrumentation features",
+        subcommands = {
+            EnableCommand.AllocationCommand.class,
+            EnableCommand.MethodsCommand.class
+        })
+    public static class EnableCommand implements Runnable {
+        @CommandLine.ParentCommand
+        private AgentCommand parent;
+
+        @Override
+        public void run() {
+            CommandLine.usage(this, System.out);
+        }
+
+        @CommandLine.Command(name = "allocation", description = "Enable allocation tracking")
+        public static class AllocationCommand implements Runnable {
+            @CommandLine.ParentCommand
+            private EnableCommand parent;
+
+            @Override
+            public void run() {
+                System.out.println("ENABLE ALLOCATION TRACKING");
+                System.out.println("=".repeat(80));
+
+                AgentClient client = parent.parent.createClient();
+
+                if (!client.isReachable()) {
+                    System.err.println("❌ Agent not reachable");
+                    return;
+                }
+
+                JsonObject response = client.enableAllocationTracking();
+                parent.parent.printJson(response);
+            }
+        }
+
+        @CommandLine.Command(name = "methods", description = "Enable method monitoring")
+        public static class MethodsCommand implements Runnable {
+            @CommandLine.ParentCommand
+            private EnableCommand parent;
+
+            @Override
+            public void run() {
+                System.out.println("ENABLE METHOD MONITORING");
+                System.out.println("=".repeat(80));
+
+                AgentClient client = parent.parent.createClient();
+
+                if (!client.isReachable()) {
+                    System.err.println("❌ Agent not reachable");
+                    return;
+                }
+
+                JsonObject response = client.enableMethodMonitoring();
+                parent.parent.printJson(response);
+            }
+        }
+    }
+
+    /**
+     * Subcommand: agent disable
+     */
+    @CommandLine.Command(name = "disable", description = "Disable instrumentation features",
+        subcommands = {
+            DisableCommand.AllocationCommand.class,
+            DisableCommand.MethodsCommand.class
+        })
+    public static class DisableCommand implements Runnable {
+        @CommandLine.ParentCommand
+        private AgentCommand parent;
+
+        @Override
+        public void run() {
+            CommandLine.usage(this, System.out);
+        }
+
+        @CommandLine.Command(name = "allocation", description = "Disable allocation tracking")
+        public static class AllocationCommand implements Runnable {
+            @CommandLine.ParentCommand
+            private DisableCommand parent;
+
+            @Override
+            public void run() {
+                System.out.println("DISABLE ALLOCATION TRACKING");
+                System.out.println("=".repeat(80));
+
+                AgentClient client = parent.parent.createClient();
+
+                if (!client.isReachable()) {
+                    System.err.println("❌ Agent not reachable");
+                    return;
+                }
+
+                JsonObject response = client.disableAllocationTracking();
+                parent.parent.printJson(response);
+            }
+        }
+
+        @CommandLine.Command(name = "methods", description = "Disable method monitoring")
+        public static class MethodsCommand implements Runnable {
+            @CommandLine.ParentCommand
+            private DisableCommand parent;
+
+            @Override
+            public void run() {
+                System.out.println("DISABLE METHOD MONITORING");
+                System.out.println("=".repeat(80));
+
+                AgentClient client = parent.parent.createClient();
+
+                if (!client.isReachable()) {
+                    System.err.println("❌ Agent not reachable");
+                    return;
+                }
+
+                JsonObject response = client.disableMethodMonitoring();
+                parent.parent.printJson(response);
+            }
         }
     }
 }
