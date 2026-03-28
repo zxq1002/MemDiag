@@ -64,11 +64,37 @@ docker exec -it memdiag-uat bash
 ### 场景 B：验证堆外内存监控 (`native-leak`)
 1. **查看概览**：`memdiag native <PID> --summary`
    *   **验收标准**：`Total Resident` (RSS) 应远大于堆内存大小。
-2. **定位泄露点**：
-   *   挂载：`memdiag native <PID> --attach`
-   *   追踪：`memdiag native <PID> --start-trace`
-   *   查看：`memdiag native <PID> --allocation-sites`
-   *   **验收标准**：应能识别出 `Unsafe.allocateMemory` 产生的分配点。
+2. **定位泄露点（Agent 模式，推荐）**：
+   *   方式一：启动时加载 Agent（在另一个终端启动目标进程）：
+     ```bash
+     java -javaagent:/app/memdiag-agent.jar=port=6789 -Dmode=native-leak -Dlimit=800 -Drate=20 MemDiagDemo
+     ```
+   *   方式二：动态 attach（需要 memdiag-agent.jar）：
+     ```bash
+     memdiag native --attach --agent-jar /app/memdiag-agent.jar --pid <PID>
+     ```
+   *   查看状态（推荐使用 --agent 选项明确连接）：
+     ```bash
+     # 方式 A：使用 --agent 选项（推荐，明确指定连接 Agent）
+     memdiag native --status --agent=localhost:6789
+     memdiag native --summary --agent=localhost:6789
+     memdiag native --regions --agent=localhost:6789
+     memdiag native --diagnose --agent=localhost:6789
+
+     # 方式 B：不使用 --agent 选项（CLI 会自动检测默认端口 6789）
+     memdiag native --status --pid <PID>
+     memdiag native --summary --pid <PID>
+
+     # 其他命令也可以使用 --agent 选项
+     memdiag histogram --agent=localhost:6789
+     memdiag threads --agent=localhost:6789
+     memdiag diagnose --agent=localhost:6789
+     ```
+   *   **验收标准**：应能看到 Agent 已连接并提供数据（Total Virtual/Total Resident 不为 0）。
+   *   **detach Agent**：
+     ```bash
+     memdiag native --detach --agent=localhost:6789
+     ```
 
 ### 场景 C：验证自动诊断建议 (`heap-high`)
 1. **运行诊断**：`memdiag diagnose <PID>`
@@ -133,12 +159,16 @@ docker exec -it memdiag-test-container bash
 
 1.  **权限要求**：Docker 启动时必须带有 `--cap-add=SYS_PTRACE` 参数，否则 JVM 的 Attach API 将无法连接到目标进程。
 2.  **资源限制**：模拟器默认在 Docker 内受到 `JAVA_OPTS="-Xmx1G"` 的限制。如果模拟 `limit` 超过 1024MB，程序将触发真实的 `java.lang.OutOfMemoryError`。
-3.  **安全验证**：在执行 `native --detach` 后，观察模拟器日志，确保其仍在正常输出（证明字节码插桩已安全剥离）。
-4.  **诊断规则**：当前内置 5 个诊断规则，包括新增的 `HEAP_LEAK_SUSPECT` 堆内存泄漏嫌疑检测。
-5.  **JVMTI 功能**：`native --attach`、`--start-trace` 等高级功能需要 `libmemdiag-agent.so` 原生库。该库需要在 Linux 环境下编译（可使用 Docker）。基础功能（`--status`、`--summary`、`--regions`、`--diagnose`）无需原生库即可使用。
-6.  **GC Root 分析**：`gc-roots` 命令目前支持基本统计功能。完整的引用链分析需要 JVMTI 原生库支持。
-7.  **Agent 模式**：已支持 Java Agent 模式，可通过 `-javaagent:memdiag-agent.jar` 启动时挂载，或动态挂载到运行中的 JVM。
-8.  **Web UI**：已提供完整的 Web 界面，包含 Spring Boot 后端和 Vue 3 前端，支持实时图表展示。
+3.  **诊断规则**：当前内置 5 个诊断规则，包括新增的 `HEAP_LEAK_SUSPECT` 堆内存泄漏嫌疑检测。
+4.  **两种模式**：
+    - **Agent 模式（推荐）**：目标 JVM 加载 `memdiag-agent.jar`，通过 HTTP API 通信
+    - **ProcFS 模式（基础）**：CLI 直接解析 `/proc` 文件系统，无侵入
+5.  **Agent 模式使用方式**：
+    - **启动时加载**：`java -javaagent:memdiag-agent.jar=port=6789 -jar your-app.jar`
+    - **动态 attach**：`memdiag native --attach --agent-jar /path/to/memdiag-agent.jar --pid <pid>`
+    - Agent 会在目标 JVM 内部启动 HTTP 服务（默认端口 6789），CLI 会自动检测并连接
+    - CLI 选项：`--agent-host`、`--agent-port`、`--agent-jar`
+6.  **Web UI**：已提供完整的 Web 界面，包含 Spring Boot 后端和 Vue 3 前端，支持实时图表展示。
 
 ---
 

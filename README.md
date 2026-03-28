@@ -440,22 +440,30 @@ DiagnosisEngine engine = new DiagnosisEngine(
 
 #### 功能说明
 
-- 通过 /proc 文件系统解析内存映射
+- **两种模式**：
+  - **Agent 模式（推荐）**：目标 JVM 加载 `memdiag-agent.jar`，通过 HTTP API 通信
+  - **ProcFS 模式（基础）**：CLI 直接解析 `/proc` 文件系统，无侵入
 - 显示虚拟内存和物理内存使用
 - 识别内存区域和加载的库
 - 检测堆外内存泄漏
-- 支持 JVMTI Agent 动态挂载和分配追踪
+
+#### 两种模式对比
+
+| 特性 | Agent 模式（推荐） | ProcFS 模式（基础） |
+|------|-------------------|-------------------|
+| **需要 Agent** | ✅ 是（memdiag-agent.jar） | ❌ 否 |
+| **数据来源** | Agent 内部 HTTP API | /proc 文件系统 |
+| **状态保持** | ✅ 跨 CLI 调用保持 | ❌ 每次独立 |
+| **功能范围** | 完整功能（含未来增强） | 仅基础功能 |
+| **对目标影响** | Agent 启动时轻微影响 | 无影响 |
 
 #### ⚠️ 对目标进程的影响
 
 | 选项 | 影响 |
 |-----|------|
-| `--status`/`--summary`/`--regions`/`--diagnose` | **无影响** - 只读 /proc 文件系统 |
-| `--attach` | **有影响** - 需要进入 Safe Point，短暂暂停所有线程；初始化 JVMTI 环境 |
-| `--detach` | **轻微影响** - 恢复字节码，短暂 Safe Point |
-| `--start-trace` | **有影响** - 监听分配事件，**每次对象分配都会触发回调**，增加 CPU 开销；占用额外内存 |
-| `--stop-trace` | **轻微影响** - 停止监听，释放缓冲区 |
-| `--allocation-sites` | **无影响** - 只读已捕获的数据 |
+| `--status`/`--summary`/`--regions`/`--diagnose` | **无影响** - 只读 /proc 文件系统或 Agent API |
+| `--attach` | **轻微影响** - 动态 attach Java Agent，短暂 Safe Point |
+| `--detach` | **轻微影响** - 停止 Agent HTTP 服务 |
 
 #### 选项
 
@@ -466,19 +474,73 @@ DiagnosisEngine engine = new DiagnosisEngine(
 | `--summary` | 显示内存摘要 | - |
 | `--regions` | 显示内存区域分布 | - |
 | `--diagnose` | 运行堆外泄漏诊断 | - |
-| `--attach` | 挂载原生 Agent | - |
-| `--detach` | 卸载原生 Agent | - |
-| `--start-trace` | 启动分配追踪 | - |
-| `--stop-trace` | 停止分配追踪 | - |
-| `--allocation-sites` | 显示分配点 | - |
-| `-l, --limit <n>` | 限制分配点显示数量 | 20 |
+| `--attach` | 动态 attach MemDiag Agent | - |
+| `--detach` |  detach MemDiag Agent | - |
+| `-l, --limit <n>` | 限制输出行数 | 20 |
+| `--agent-host` | Agent HTTP 服务主机 | localhost |
+| `--agent-port` | Agent HTTP 服务端口 | 6789 |
+| `--agent-jar` | memdiag-agent.jar 路径（用于动态 attach） | - |
+
+#### Agent 模式（推荐）
+
+**方式一：启动时加载（推荐用于生产环境）**
+```bash
+# 在目标 JVM 启动时加载 Agent
+java -javaagent:memdiag-agent.jar=port=6789 -jar your-app.jar
+
+# 然后 CLI 会自动检测并连接到 Agent
+memdiag native --status --pid 12345
+memdiag native --summary --pid 12345
+```
+
+**方式二：动态 attach（推荐用于测试/调试）**
+```bash
+# 动态 attach 到运行中的 JVM
+memdiag native --attach --agent-jar /path/to/memdiag-agent.jar --pid 12345
+
+# 后续命令通过 --agent 选项连接到 Agent（推荐）
+memdiag native --status --agent=localhost:6789
+memdiag native --summary --agent=localhost:6789
+memdiag native --regions --agent=localhost:6789
+memdiag native --diagnose --agent=localhost:6789
+
+# 或者，如果 Agent 在默认端口运行，CLI 会自动检测并使用 Agent 模式
+memdiag native --status --pid 12345
+
+# detach Agent
+memdiag native --detach --agent=localhost:6789
+```
+
+**重要提示**：
+- Attach 成功后，Agent 会在目标 JVM 内启动 HTTP 服务（默认端口 6789）
+- 建议使用 `--agent=localhost:6789` 选项明确指定连接 Agent
+- 如果不使用 `--agent` 选项，CLI 会先尝试连接默认端口的 Agent，如果不可用则回退到 ProcFS 模式
+- 所有其他命令（histogram、threads、diagnose 等）也支持 `--agent` 选项
+
+**Agent 模式优势**：
+- Agent 运行在目标 JVM 内部，数据更准确
+- 支持跨 CLI 调用保持状态
+- 通过 HTTP API 通信，更稳定
+- 自动降级：如果 Agent 不可用，自动回退到 ProcFS 基础功能
+
+#### ProcFS 模式（基础）
+
+如果没有加载 Agent，CLI 会自动使用 ProcFS 模式：
+
+```bash
+# 直接解析 /proc 文件系统（无需 Agent）
+memdiag native --status --pid 12345
+memdiag native --summary --pid 12345
+memdiag native --regions --pid 12345
+memdiag native --diagnose --pid 12345
+```
 
 #### 使用示例
 
 ```bash
 # === 基础分析 ===
 
-# 示例 1: 检查是否可用
+# 示例 1: 检查状态和可用模式
 memdiag native --status
 
 # 示例 2: 显示内存摘要
@@ -494,51 +556,32 @@ memdiag native --diagnose
 
 # === Agent 控制 ===
 
-# 示例 5: 挂载 Agent
-memdiag native --attach --pid 12345
+# 示例 5: 动态 attach Agent
+memdiag native --attach --agent-jar /path/to/memdiag-agent.jar --pid 12345
 
-# 示例 6: 卸载 Agent
+# 示例 6:  detach Agent
 memdiag native --detach --pid 12345
-
-# === 分配追踪 ===
-
-# 示例 7: 启动分配追踪
-memdiag native --start-trace --pid 12345
-
-# 示例 8: 停止分配追踪
-memdiag native --stop-trace --pid 12345
-
-# 示例 9: 显示分配点
-memdiag native --allocation-sites --pid 12345
-memdiag native --allocation-sites --limit 10 --pid 12345
 ```
 
-#### 完整工作流示例
+#### 输出示例 - 状态
 
-```bash
-# 步骤 1: 检查状态
-memdiag native --status --pid 12345
+```
+NATIVE MEMORY ANALYSIS STATUS
+==========================================================================
+Available: ✅ Yes
+Platform: Linux
+Mode: Agent Mode (HTTP API)
+Agent Connected: ✅ Yes
+Agent Endpoint: localhost:6789
 
-# 步骤 2: 挂载 Agent
-memdiag native --attach --pid 12345
-# 输出: ✅ Agent attached successfully
+AVAILABLE MODES:
+  ✅ Agent Mode (recommended) - Use memdiag-agent.jar for full features
+     - Start target JVM with: java -javaagent:memdiag-agent.jar=port=6789 ...
+     - Or attach dynamically: memdiag native --attach --agent-jar <path> --pid <pid>
 
-# 步骤 3: 启动追踪
-memdiag native --start-trace --pid 12345
-# 输出: ✅ Allocation tracing started
-
-# 步骤 4: 让应用运行一段时间
-# ... 执行操作以触发分配 ...
-
-# 步骤 5: 查看分配点
-memdiag native --allocation-sites --pid 12345
-
-# 步骤 6: 停止追踪
-memdiag native --stop-trace --pid 12345
-
-# 步骤 7: 卸载 Agent
-memdiag native --detach --pid 12345
-# 输出: ✅ Agent detached successfully
+  ✅ ProcFS Mode (basic) - Read-only /proc filesystem analysis
+     - No agent required
+     - Limited to status/summary/regions/diagnose
 ```
 
 #### 输出示例 - 内存摘要
@@ -565,35 +608,12 @@ START              END                PERMS            SIZE          RSS FILE
 Total: 127 regions
 ```
 
-#### 输出示例 - 分配点
-
-```
-TOP ALLOCATION SITES
-==========================================================================
-Total allocated:     153,600,000 bytes (146.48 MB)
-Live bytes:          102,400,000 bytes (97.66 MB)
-
-DEMO: Allocation sites (simulated for demo)
---------------------------------------------------------------------------
-   COUNT          TOTAL           LIVE          FREED  SITE
---------------------------------------------------------------------------
-     150      15,360,000      15,360,000              0  LeakSimulator.simulateLeak
-      50       5,120,000              0      5,120,000  LeakSimulator.allocateBuffers
-     200      20,480,000      10,240,000     10,240,000  ByteBuffer.allocateDirect
-...
---------------------------------------------------------------------------
-```
-
 #### 实现原理
 
 `NativeCommand` 使用两层实现：
-1. **ProcFileSystemNativeAnalyzer**: 解析 `/proc/<pid>/maps` 和 `/proc/<pid>/smaps` 获取内存区域信息（无侵入）
-2. **JVMTI Agent**: 通过 JVMTI（JVM Tool Interface）实现深度功能：
-   - `--attach/--detach`: 动态加载/卸载 JVMTI Agent
-   - `--start-trace/--stop-trace`: 控制 `VMObjectAlloc` 和 `ObjectFree` 事件监听
-   - `--allocation-sites`: 显示捕获的分配点统计
-
-Agent 挂载前会通过 `EnvironmentPrecheck` 进行环境预检。
+1. **AgentNativeAnalyzer**：通过 HTTP 与 `memdiag-agent.jar` 通信（推荐）
+   - Agent 内部可选加载 JVMTI 原生库进行增强
+2. **ProcFileSystemNativeAnalyzer**：解析 `/proc/<pid>/maps` 和 `/proc/<pid>/smaps` 获取内存区域信息（无侵入，基础回退）
 
 ---
 
