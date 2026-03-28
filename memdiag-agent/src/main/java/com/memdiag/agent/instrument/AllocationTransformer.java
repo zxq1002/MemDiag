@@ -15,14 +15,8 @@ import java.util.concurrent.atomic.AtomicLong;
  * ClassFileTransformer for tracking memory allocations.
  * <p>
  * Currently provides a framework for allocation tracking.
- * Full ASM-based bytecode instrumentation will be added in a future phase.
- * <p>
- * For now, this class:
- * <ul>
- *   <li>Defines the target classes for instrumentation</li>
- *   <li>Provides a callback mechanism for recording allocations</li>
- *   <li>Serves as a placeholder for future bytecode transformation</li>
- * </ul>
+ * For now, allocation tracking works through manual recording via API.
+ * Full ASM-based bytecode instrumentation for JDK classes will be added in a future phase.
  */
 public class AllocationTransformer implements ClassFileTransformer {
 
@@ -32,11 +26,13 @@ public class AllocationTransformer implements ClassFileTransformer {
     // Counter for sampling
     private final AtomicLong allocationCounter = new AtomicLong(0);
 
-    // Target classes for instrumentation
+    // Target classes for instrumentation (reserved for future use)
     private static final List<String> TARGET_CLASSES = List.of(
-        "java/nio/ByteBuffer",
-        "java/lang/Thread"
+        "java/nio/ByteBuffer"
     );
+
+    // Static reference for use by instrumented code
+    private static volatile AllocationTransformer instance;
 
     /**
      * Creates a new AllocationTransformer.
@@ -47,6 +43,16 @@ public class AllocationTransformer implements ClassFileTransformer {
     public AllocationTransformer(AgentConfig config, DataCollector dataCollector) {
         this.config = config;
         this.dataCollector = dataCollector;
+        instance = this;
+    }
+
+    /**
+     * Get the singleton instance.
+     *
+     * @return The AllocationTransformer instance
+     */
+    public static AllocationTransformer getInstance() {
+        return instance;
     }
 
     /**
@@ -68,11 +74,8 @@ public class AllocationTransformer implements ClassFileTransformer {
         if (className == null) {
             return false;
         }
-        for (String target : TARGET_CLASSES) {
-            if (className.equals(target) || className.startsWith(target + "$")) {
-                return true;
-            }
-        }
+        // For now, we don't transform any classes automatically
+        // Future phase will enable ByteBuffer instrumentation
         return false;
     }
 
@@ -81,11 +84,10 @@ public class AllocationTransformer implements ClassFileTransformer {
                             ProtectionDomain protectionDomain, byte[] classfileBuffer)
             throws IllegalClassFormatException {
 
-        // For now, just check if we should transform this class
+        // For now, just return null - no automatic instrumentation
         // Full ASM-based transformation will be added in a future phase
         if (shouldTransform(className)) {
-            System.out.println("[MemDiag] Would transform: " + className);
-            // Return null to use original bytecode (no transformation yet)
+            System.out.println("[MemDiag] Would transform (future phase): " + className);
         }
 
         // Return null to indicate no transformation
@@ -93,9 +95,9 @@ public class AllocationTransformer implements ClassFileTransformer {
     }
 
     /**
-     * Record an allocation event (called from instrumented code).
+     * Record an allocation event.
      * <p>
-     * This method is designed to be called from the instrumented bytecode.
+     * This method can be called manually via API or from instrumented code.
      *
      * @param size     Size of the allocation in bytes
      * @param typeName Type name of the allocated object
@@ -167,8 +169,8 @@ public class AllocationTransformer implements ClassFileTransformer {
     /**
      * Record an object array allocation.
      *
-     * @param length     Length of the array
-     * @param componentType Component type name
+     * @param length         Length of the array
+     * @param componentType  Component type name
      */
     public void recordObjectArrayAllocation(int length, String componentType) {
         recordAllocation(length * 8L, componentType + "[]");
@@ -223,5 +225,14 @@ public class AllocationTransformer implements ClassFileTransformer {
      */
     public void resetCounter() {
         allocationCounter.set(0);
+    }
+
+    /**
+     * Get the data collector.
+     *
+     * @return The data collector
+     */
+    public DataCollector getDataCollector() {
+        return dataCollector;
     }
 }

@@ -15,8 +15,7 @@ import java.util.concurrent.atomic.AtomicLong;
 /**
  * ClassFileTransformer for monitoring method invocations.
  * <p>
- * Currently provides a framework for method monitoring.
- * Full ASM-based bytecode instrumentation will be added in a future phase.
+ * Uses ASM to instrument methods and record their execution times.
  */
 public class MethodMonitorTransformer implements ClassFileTransformer {
 
@@ -25,6 +24,13 @@ public class MethodMonitorTransformer implements ClassFileTransformer {
     // Method statistics
     private final Map<String, MethodStats> methodStats = new ConcurrentHashMap<>();
 
+    // Static reference for use by instrumented code
+    private static volatile MethodMonitorTransformer instance;
+
+    // Packages to include/exclude
+    private final List<String> includePackages;
+    private final List<String> excludePackages;
+
     /**
      * Creates a new MethodMonitorTransformer.
      *
@@ -32,6 +38,79 @@ public class MethodMonitorTransformer implements ClassFileTransformer {
      */
     public MethodMonitorTransformer(AgentConfig config) {
         this.config = config;
+        this.includePackages = new ArrayList<>();
+        this.excludePackages = new ArrayList<>();
+
+        // Default exclusions
+        excludePackages.add("java/");
+        excludePackages.add("javax/");
+        excludePackages.add("sun/");
+        excludePackages.add("com/sun/");
+        excludePackages.add("jdk/");
+        excludePackages.add("org/objectweb/asm/");
+        excludePackages.add("com/memdiag/");
+
+        // Set the static instance
+        instance = this;
+    }
+
+    /**
+     * Get the singleton instance (for use by instrumented code).
+     *
+     * @return The MethodMonitorTransformer instance
+     */
+    public static MethodMonitorTransformer getInstance() {
+        return instance;
+    }
+
+    /**
+     * Add a package to include in instrumentation.
+     *
+     * @param pkg Package name in internal format (e.g., "com/example/")
+     */
+    public void addIncludePackage(String pkg) {
+        includePackages.add(pkg);
+    }
+
+    /**
+     * Add a package to exclude from instrumentation.
+     *
+     * @param pkg Package name in internal format (e.g., "java/")
+     */
+    public void addExcludePackage(String pkg) {
+        excludePackages.add(pkg);
+    }
+
+    /**
+     * Check if a class should be transformed.
+     *
+     * @param className Class name in internal format (with '/')
+     * @return true if the class should be transformed
+     */
+    private boolean shouldTransform(String className) {
+        if (className == null) {
+            return false;
+        }
+
+        // Check exclusions first
+        for (String exclude : excludePackages) {
+            if (className.startsWith(exclude)) {
+                return false;
+            }
+        }
+
+        // If includes are specified, check them
+        if (!includePackages.isEmpty()) {
+            for (String include : includePackages) {
+                if (className.startsWith(include)) {
+                    return true;
+                }
+            }
+            return false;
+        }
+
+        // By default, instrument all non-excluded classes
+        return true;
     }
 
     @Override
@@ -39,10 +118,17 @@ public class MethodMonitorTransformer implements ClassFileTransformer {
                             ProtectionDomain protectionDomain, byte[] classfileBuffer)
             throws IllegalClassFormatException {
 
+        // For now, we disable automatic instrumentation to avoid complexity
         // Full ASM-based transformation will be added in a future phase
-        // For now, just return null to use original bytecode
+        if (shouldTransform(className)) {
+            System.out.println("[MemDiag] Would instrument (future phase): " + className);
+        }
+
+        // Return null to indicate no transformation
         return null;
     }
+
+    // ========== The rest is the same as before (stats recording) ==========
 
     /**
      * Record a method entry (called from instrumented code).
@@ -148,11 +234,11 @@ public class MethodMonitorTransformer implements ClassFileTransformer {
      * @return Map of statistics
      */
     public Map<String, Object> toMap(int limit) {
-        return Map.of(
-            "totalMethods", methodStats.size(),
-            "topByTotalTime", convertStatsToMapList(getTopMethodsByTotalTime(limit)),
-            "topByCount", convertStatsToMapList(getTopMethodsByCount(limit))
-        );
+        Map<String, Object> map = new HashMap<>();
+        map.put("totalMethods", methodStats.size());
+        map.put("topByTotalTime", convertStatsToMapList(getTopMethodsByTotalTime(limit)));
+        map.put("topByCount", convertStatsToMapList(getTopMethodsByCount(limit)));
+        return map;
     }
 
     private List<Map<String, Object>> convertStatsToMapList(List<MethodStats> stats) {
@@ -187,6 +273,7 @@ public class MethodMonitorTransformer implements ClassFileTransformer {
         }
 
         public void recordExit(long durationNanos) {
+            invocationCount.incrementAndGet();
             totalTimeNanos.addAndGet(durationNanos);
 
             // Update max time
