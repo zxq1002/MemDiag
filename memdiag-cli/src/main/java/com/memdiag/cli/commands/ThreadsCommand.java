@@ -38,8 +38,9 @@ public class ThreadsCommand extends BaseCommand {
             }
         } else {
             JmxClient client;
-            if (pid != null && !pid.isEmpty()) {
-                client = JmxClient.attachToPid(pid);
+            String p = getPid();
+            if (p != null && !p.isEmpty()) {
+                client = JmxClient.attachToPid(p);
             } else {
                 client = JmxClient.attachToCurrentJvm();
             }

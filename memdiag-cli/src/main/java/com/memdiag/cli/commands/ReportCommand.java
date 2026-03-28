@@ -63,9 +63,10 @@ public class ReportCommand extends BaseCommand {
                 diagnosis = client.getDiagnosis();
             } else {
                 JmxClient client;
-                if (pid != null && !pid.isEmpty()) {
-                    System.err.println("Attaching to JVM PID " + pid + "...");
-                    client = JmxClient.attachToPid(pid);
+                String p = getPid();
+                if (p != null && !p.isEmpty()) {
+                    System.err.println("Attaching to JVM PID " + p + "...");
+                    client = JmxClient.attachToPid(p);
                 } else {
                     System.err.println("Attaching to current JVM...");
                     client = JmxClient.attachToCurrentJvm();

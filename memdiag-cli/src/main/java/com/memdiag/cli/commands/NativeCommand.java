@@ -1,5 +1,8 @@
 package com.memdiag.cli.commands;
 
+import com.memdiag.core.agent.AgentAttacher;
+import com.memdiag.core.agent.AgentClient;
+import com.memdiag.core.agent.AgentNativeAnalyzer;
 import com.memdiag.core.nativeapi.AllocationPairDetector;
 import com.memdiag.core.nativeapi.AllocationSite;
 import com.memdiag.core.nativeapi.LibraryMapping;
@@ -27,42 +30,37 @@ public class NativeCommand extends BaseCommand {
     @CommandLine.Option(names = {"--diagnose"}, description = "Run native leak diagnosis")
     private boolean diagnose;
 
-    @CommandLine.Option(names = {"--attach"}, description = "Attach native agent to target process (requires JVMTI)")
+    @CommandLine.Option(names = {"--attach"}, description = "Attach MemDiag agent to target process")
     private boolean attach;
 
-    @CommandLine.Option(names = {"--detach"}, description = "Detach native agent from target process (requires JVMTI)")
+    @CommandLine.Option(names = {"--detach"}, description = "Detach MemDiag agent from target process")
     private boolean detach;
 
-    @CommandLine.Option(names = {"--start-trace"}, description = "Start native allocation tracing (requires JVMTI)")
-    private boolean startTrace;
-
-    @CommandLine.Option(names = {"--stop-trace"}, description = "Stop native allocation tracing (requires JVMTI)")
-    private boolean stopTrace;
-
-    @CommandLine.Option(names = {"--allocation-sites"}, description = "Show top allocation sites (requires JVMTI tracing)")
-    private boolean allocationSites;
-
-    @CommandLine.Option(names = {"-l", "--limit"}, defaultValue = "20", description = "Limit for allocation sites output")
+    @CommandLine.Option(names = {"-l", "--limit"}, defaultValue = "20", description = "Limit for output")
     private int limit;
 
-    // 用于演示的分配点检测器（实际会从 native 层获取事件）
+    @CommandLine.Option(names = {"--agent-port"}, defaultValue = "6789", description = "Port for communicating with MemDiag agent")
+    private int agentPort;
+
+    @CommandLine.Option(names = {"--agent-host"}, defaultValue = "localhost", description = "Host for communicating with MemDiag agent")
+    private String agentHost;
+
+    @CommandLine.Option(names = {"--agent-jar"}, description = "Path to memdiag-agent.jar for dynamic attach")
+    private String agentJarPath;
+
+    // 用于演示的分配点检测器（实际会从 Agent 获取数据）
     private static final AllocationPairDetector demoDetector = new AllocationPairDetector();
 
     @Override
     public void run() {
-        // Determine if we need JVMTI features
-        boolean requiresJVMTI = attach || detach || startTrace || stopTrace || allocationSites;
+        // Try Agent mode first (preferred)
+        NativeMemoryAnalyzer analyzer = tryCreateAgentAnalyzer();
 
-        NativeMemoryAnalyzer analyzer;
-        if (requiresJVMTI) {
-            if (pid != null && !pid.isEmpty()) {
-                analyzer = NativeMemoryAnalyzerFactory.getInstanceWithJVMTI(pid);
-            } else {
-                analyzer = NativeMemoryAnalyzerFactory.getInstanceWithJVMTI();
-            }
-        } else {
-            if (pid != null && !pid.isEmpty()) {
-                analyzer = NativeMemoryAnalyzerFactory.getInstance(pid);
+        if (analyzer == null) {
+            // Fall back to ProcFS mode (basic, no agent required)
+            String p = getPid();
+            if (p != null && !p.isEmpty()) {
+                analyzer = NativeMemoryAnalyzerFactory.getInstance(p);
             } else {
                 analyzer = NativeMemoryAnalyzerFactory.getInstance();
             }
@@ -80,12 +78,6 @@ public class NativeCommand extends BaseCommand {
             handleAttach(analyzer);
         } else if (detach) {
             handleDetach(analyzer);
-        } else if (startTrace) {
-            handleStartTrace(analyzer);
-        } else if (stopTrace) {
-            handleStopTrace(analyzer);
-        } else if (allocationSites) {
-            printAllocationSites(analyzer);
         } else {
             printStatus(analyzer);
         }
@@ -96,47 +88,38 @@ public class NativeCommand extends BaseCommand {
         System.out.println("==========================================================================");
         System.out.printf("Available: %s%n", analyzer.isAvailable() ? "✅ Yes" : "❌ No");
         System.out.printf("Platform: %s%n", analyzer.getPlatform());
-        System.out.printf("Requires Agent: %s%n", analyzer.requiresAgent() ? "Yes" : "No");
-        System.out.printf("Agent Attached: %s%n", analyzer.isAgentAttached() ? "Yes" : "No");
-        System.out.printf("JVMTI Support: %s%n", isJVMTIAvailable(analyzer) ? "✅ Yes" : "❌ No (install libmemdiag-agent.so for advanced features)");
+        System.out.printf("Mode: %s%n", getModeDescription(analyzer));
 
-        // Check if native library is loaded
-        String libraryStatus = getNativeLibraryStatus();
-        if (libraryStatus != null) {
-            System.out.printf("Native Library: %s%n", libraryStatus);
+        if (analyzer instanceof AgentNativeAnalyzer) {
+            AgentNativeAnalyzer agentAnalyzer = (AgentNativeAnalyzer) analyzer;
+            AgentClient client = agentAnalyzer.getClient();
+            System.out.printf("Agent Connected: %s%n", client.isReachable() ? "✅ Yes" : "❌ No");
+            if (client.isReachable()) {
+                System.out.printf("Agent Endpoint: %s:%d%n", client.getHost(), client.getPort());
+            }
         }
 
         if (!analyzer.isAvailable()) {
             System.out.println();
             System.out.println("NOTE: Native memory analysis requires Linux with /proc filesystem mounted.");
         }
-        if (!isJVMTIAvailable(analyzer)) {
-            System.out.println();
-            System.out.println("NOTE: JVMTI advanced features (--attach, --trace) require libmemdiag-agent.so.");
-            System.out.println("      Basic features (--status, --summary, --regions, --diagnose) are still available.");
-        }
+
+        System.out.println();
+        System.out.println("AVAILABLE MODES:");
+        System.out.println("  ✅ Agent Mode (recommended) - Use memdiag-agent.jar for full features");
+        System.out.println("     - Start target JVM with: java -javaagent:memdiag-agent.jar=port=6789 ...");
+        System.out.println("     - Or attach dynamically: memdiag native --attach --agent-jar <path> --pid <pid>");
+        System.out.println();
+        System.out.println("  ✅ ProcFS Mode (basic) - Read-only /proc filesystem analysis");
+        System.out.println("     - No agent required");
+        System.out.println("     - Limited to status/summary/regions/diagnose");
     }
 
-    private String getNativeLibraryStatus() {
-        try {
-            Class<?> nativeLoaderClass = Class.forName("com.memdiag.nativeimpl.NativeLoader");
-            java.lang.reflect.Method isLoadedMethod = nativeLoaderClass.getMethod("isLoaded");
-            boolean isLoaded = (Boolean) isLoadedMethod.invoke(null);
-
-            if (isLoaded) {
-                java.lang.reflect.Method getPathMethod = nativeLoaderClass.getMethod("getLoadedLibraryPath");
-                String path = (String) getPathMethod.invoke(null);
-                return "✅ Loaded (" + path + ")";
-            } else {
-                return "❌ Not loaded";
-            }
-        } catch (Exception e) {
-            return "❌ Not available (NativeLoader not found)";
+    private String getModeDescription(NativeMemoryAnalyzer analyzer) {
+        if (analyzer instanceof AgentNativeAnalyzer) {
+            return "Agent Mode (HTTP API)";
         }
-    }
-
-    private boolean isJVMTIAvailable(NativeMemoryAnalyzer analyzer) {
-        return analyzer.getClass().getName().contains("JVMTINativeAnalyzer");
+        return "ProcFS Mode (read-only)";
     }
 
     private void printSummary(NativeMemoryAnalyzer analyzer) {
@@ -256,179 +239,128 @@ public class NativeCommand extends BaseCommand {
     }
 
     private void handleAttach(NativeMemoryAnalyzer analyzer) {
-        System.out.println("ATTACHING NATIVE AGENT");
+        System.out.println("ATTACHING MEMDIAG AGENT");
         System.out.println("==========================================================================");
 
-        // Check native library status first
-        String libraryStatus = getNativeLibraryStatus();
-        if (libraryStatus != null && libraryStatus.contains("❌")) {
-            System.err.println("❌ Native library not loaded.");
-            System.err.println("   Status: " + libraryStatus);
-            System.err.println();
-            System.err.println("To use this feature, ensure:");
-            System.err.println("  1. libmemdiag-agent.so is built and in the classpath");
-            System.err.println("  2. You're running on Linux");
-            System.err.println("  3. The JVM has attach permissions");
+        // Check if this is an AgentNativeAnalyzer
+        if (analyzer instanceof AgentNativeAnalyzer) {
+            AgentNativeAnalyzer agentAnalyzer = (AgentNativeAnalyzer) analyzer;
+            AgentClient client = agentAnalyzer.getClient();
+
+            // Check if already reachable
+            if (client.isReachable()) {
+                System.out.println("✅ Agent is already running on " + client.getHost() + ":" + client.getPort());
+                return;
+            }
+
+            // Try to attach
+            String jarPath = agentJarPath;
+            if (jarPath == null || jarPath.isEmpty()) {
+                jarPath = AgentAttacher.findAgentJar();
+            }
+
+            if (jarPath == null) {
+                System.err.println("❌ Cannot find memdiag-agent.jar");
+                System.err.println();
+                System.err.println("Please specify the path with --agent-jar <path>");
+                return;
+            }
+
+            String p = getPid();
+            if (p == null || p.isEmpty()) {
+                System.err.println("❌ PID is required for dynamic attach");
+                System.err.println();
+                System.err.println("Please specify the target PID with --pid <pid>");
+                return;
+            }
+
+            System.out.println("Attaching to PID " + p + " with agent: " + jarPath);
+            if (AgentAttacher.attach(p, jarPath, agentPort)) {
+                // Wait for agent to start
+                try {
+                    Thread.sleep(1000);
+                } catch (InterruptedException e) {
+                    Thread.currentThread().interrupt();
+                }
+
+                // Verify
+                if (client.isReachable()) {
+                    System.out.println("✅ Agent attached successfully!");
+                    System.out.println("   Agent listening on " + agentHost + ":" + agentPort);
+                } else {
+                    System.out.println("⚠️ Agent attach reported success, but cannot connect to HTTP endpoint");
+                }
+            } else {
+                System.err.println("❌ Failed to attach agent");
+            }
             return;
         }
 
-        if (!isJVMTIAvailable(analyzer)) {
-            System.err.println("❌ JVMTI agent is not available.");
-            System.err.println();
-            System.err.println("To use this feature, ensure:");
-            System.err.println("  1. libmemdiag-agent.so is built and in the classpath");
-            System.err.println("  2. You're running on Linux");
-            System.err.println("  3. The JVM has attach permissions");
-            return;
-        }
-
-        if (analyzer.isAgentAttached()) {
-            System.out.println("✅ Agent is already attached");
-            return;
-        }
-
-        if (analyzer.attachAgent()) {
-            System.out.println("✅ Agent attached successfully");
-        } else {
-            System.err.println("❌ Failed to attach agent");
-            System.err.println();
-            System.err.println("Troubleshooting:");
-            System.err.println("  - Ensure you're running on Linux with JVMTI support");
-            System.err.println("  - Verify the native library is available");
-            System.err.println("  - Check that you have permission to attach to the target process");
-        }
+        // Not in agent mode - provide instructions
+        System.err.println("❌ Agent attach requires agent mode.");
+        System.err.println();
+        System.err.println("To attach the MemDiag agent:");
+        System.err.println();
+        System.err.println("   Option 1: Start target JVM with agent (recommended):");
+        System.err.println("     java -javaagent:/app/memdiag-agent.jar=port=6789 -jar your-app.jar");
+        System.err.println();
+        System.err.println("   Option 2: Dynamically attach agent:");
+        System.err.println("     memdiag native --attach --agent-jar /app/memdiag-agent.jar --pid <pid>");
+        System.err.println();
+        System.err.println("Then all subsequent commands will automatically connect to the agent.");
     }
 
     private void handleDetach(NativeMemoryAnalyzer analyzer) {
-        System.out.println("DETACHING NATIVE AGENT");
+        System.out.println("DETACHING MEMDIAG AGENT");
         System.out.println("==========================================================================");
 
-        if (!isJVMTIAvailable(analyzer)) {
-            System.err.println("❌ JVMTI agent is not available.");
+        // Check if this is an AgentNativeAnalyzer
+        if (analyzer instanceof AgentNativeAnalyzer) {
+            AgentNativeAnalyzer agentAnalyzer = (AgentNativeAnalyzer) analyzer;
+            AgentClient client = agentAnalyzer.getClient();
+
+            if (client.isReachable()) {
+                if (client.detach()) {
+                    System.out.println("✅ Detach request sent to agent");
+                } else {
+                    System.err.println("❌ Failed to send detach request");
+                }
+            } else {
+                System.out.println("Agent is not reachable");
+            }
             return;
         }
 
-        if (!analyzer.isAgentAttached()) {
-            System.out.println("Agent is not attached");
-            return;
-        }
-
-        if (analyzer.detachAgent()) {
-            System.out.println("✅ Agent detached successfully");
-        } else {
-            System.err.println("❌ Failed to detach agent");
-        }
+        System.err.println("❌ Agent mode not active.");
+        System.err.println("   Use --attach first, or start the target JVM with:");
+        System.err.println("     java -javaagent:memdiag-agent.jar=port=6789 ...");
     }
 
-    private void handleStartTrace(NativeMemoryAnalyzer analyzer) {
-        System.out.println("STARTING ALLOCATION TRACING");
-        System.out.println("==========================================================================");
-
-        if (!isJVMTIAvailable(analyzer)) {
-            System.err.println("❌ JVMTI agent is not available.");
-            System.err.println();
-            System.err.println("To use allocation tracing, you need libmemdiag-agent.so.");
-            return;
+    /**
+     * Try to create an AgentNativeAnalyzer if agent is available or can be attached.
+     *
+     * @return An AgentNativeAnalyzer, or null if agent mode is not available
+     */
+    private NativeMemoryAnalyzer tryCreateAgentAnalyzer() {
+        // First, check if agent jar path is specified - try to attach
+        String p = getPid();
+        if (agentJarPath != null && p != null && !p.isEmpty()) {
+            String jarPath = agentJarPath;
+            if (agentJarPath.isEmpty()) {
+                jarPath = AgentAttacher.findAgentJar();
+            }
+            if (jarPath != null) {
+                AgentClient client = new AgentClient(agentHost, agentPort);
+                return new AgentNativeAnalyzer(client, jarPath, p);
+            }
         }
 
-        if (!analyzer.isAgentAttached()) {
-            System.err.println("❌ Agent is not attached. Please run:");
-            System.err.println("   memdiag native --attach [--pid <pid>]");
-            return;
+        // Check if agent is already running (reachable)
+        AgentClient client = new AgentClient(agentHost, agentPort);
+        if (client.isReachable()) {
+            return new AgentNativeAnalyzer(client, null, p);
         }
 
-        if (analyzer.isTrackingEnabled()) {
-            System.out.println("Tracing is already enabled");
-            return;
-        }
-
-        if (analyzer.startAllocationTracking()) {
-            System.out.println("✅ Allocation tracing started");
-            System.out.println();
-            System.out.println("Next steps:");
-            System.out.println("  - Let the application run to capture allocations");
-            System.out.println("  - Use --allocation-sites to view results");
-            System.out.println("  - Use --stop-trace to stop tracing");
-        } else {
-            System.err.println("❌ Failed to start allocation tracing");
-        }
-    }
-
-    private void handleStopTrace(NativeMemoryAnalyzer analyzer) {
-        System.out.println("STOPPING ALLOCATION TRACING");
-        System.out.println("==========================================================================");
-
-        if (!isJVMTIAvailable(analyzer)) {
-            System.err.println("❌ JVMTI agent is not available.");
-            return;
-        }
-
-        if (!analyzer.isTrackingEnabled()) {
-            System.out.println("Tracing is not enabled");
-            return;
-        }
-
-        if (analyzer.stopAllocationTracking()) {
-            System.out.println("✅ Allocation tracing stopped");
-            System.out.println();
-            System.out.println("To view results:");
-            System.out.println("  memdiag native --allocation-sites [--pid <pid>]");
-        } else {
-            System.err.println("❌ Failed to stop allocation tracing");
-        }
-    }
-
-    private void printAllocationSites(NativeMemoryAnalyzer analyzer) {
-        System.out.println("TOP ALLOCATION SITES");
-        System.out.println("==========================================================================");
-
-        if (isJVMTIAvailable(analyzer) && analyzer.isTrackingEnabled()) {
-            // 显示来自 native 追踪器的实际数据
-            long totalAllocated = analyzer.getTotalAllocated();
-            long liveBytes = analyzer.getLiveBytes();
-
-            System.out.printf("Total allocated:  %,15d bytes (%,.2f MB)%n",
-                totalAllocated, totalAllocated / (1024.0 * 1024.0));
-            System.out.printf("Live bytes:       %,15d bytes (%,.2f MB)%n",
-                liveBytes, liveBytes / (1024.0 * 1024.0));
-            System.out.println();
-        } else if (!isJVMTIAvailable(analyzer)) {
-            System.err.println("⚠ JVMTI agent not available. Showing demo data only.");
-            System.err.println("  To see real allocation sites, install libmemdiag-agent.so and use:");
-            System.err.println("    memdiag native --attach");
-            System.err.println("    memdiag native --start-trace");
-            System.err.println("    memdiag native --allocation-sites");
-            System.out.println();
-        } else if (!analyzer.isTrackingEnabled()) {
-            System.err.println("⚠ Tracing is not enabled. Showing demo data only.");
-            System.err.println("  To see real allocation sites:");
-            System.err.println("    memdiag native --attach");
-            System.err.println("    memdiag native --start-trace");
-            System.err.println("    memdiag native --allocation-sites");
-            System.out.println();
-        }
-
-        // 显示演示数据（模拟 LeakSimulator 的分配点）
-        System.out.println("DEMO: Allocation sites (simulated for demo)");
-        System.out.println("--------------------------------------------------------------------------");
-        System.out.printf("%-8s %15s %15s %15s  %s%n",
-            "COUNT", "TOTAL", "LIVE", "FREED", "SITE");
-        System.out.println("--------------------------------------------------------------------------");
-
-        // 模拟 LeakSimulator 的分配模式
-        printDemoAllocationSite("LeakSimulator.simulateLeak", 150, 15360000, 15360000, 0);
-        printDemoAllocationSite("LeakSimulator.allocateBuffers", 50, 5120000, 0, 5120000);
-        printDemoAllocationSite("ByteBuffer.allocateDirect", 200, 20480000, 10240000, 10240000);
-        printDemoAllocationSite("Unsafe.allocateMemory", 75, 7680000, 3840000, 3840000);
-
-        System.out.println("--------------------------------------------------------------------------");
-        System.out.println();
-        System.out.println("Note: In a real run, these would show actual stack traces");
-        System.out.println("      from the native allocation tracker.");
-    }
-
-    private void printDemoAllocationSite(String site, int count, long total, long live, long freed) {
-        System.out.printf("%,8d %,15d %,15d %,15d  %s%n",
-            count, total, live, freed, site);
+        return null;
     }
 }

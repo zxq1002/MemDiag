@@ -15,9 +15,6 @@ import java.util.Map;
 @CommandLine.Command(name = "gc-roots", description = "GC Root analysis (Java 11+)", mixinStandardHelpOptions = true)
 public class GcRootsCommand extends BaseCommand {
 
-    @CommandLine.Parameters(index = "0", description = "Target PID", arity = "0..1")
-    private String targetPid;
-
     @CommandLine.Option(names = {"--class"}, description = "Class name to analyze (e.g., 'byte[]', 'com.example.MyClass')")
     private String className;
 
@@ -32,7 +29,7 @@ public class GcRootsCommand extends BaseCommand {
 
     @Override
     public void run() {
-        String pidToUse = targetPid != null ? targetPid : pid;
+        String pidToUse = getPid();
         if (pidToUse == null || pidToUse.isEmpty()) {
             System.err.println("Error: PID is required. Use --pid <pid> or provide as parameter.");
             System.err.println();
