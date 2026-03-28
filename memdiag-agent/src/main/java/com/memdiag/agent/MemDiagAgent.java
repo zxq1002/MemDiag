@@ -3,9 +3,13 @@ package com.memdiag.agent;
 import com.memdiag.agent.collect.DataCollector;
 import com.memdiag.agent.collect.StatsAggregator;
 import com.memdiag.agent.instrument.InstrumentManager;
+import com.memdiag.agent.instrument.MemDiagSpy;
 import com.memdiag.agent.jvmti.AgentJVMTILoader;
 
+import java.io.File;
 import java.lang.instrument.Instrumentation;
+import java.net.URL;
+import java.util.jar.JarFile;
 
 /**
  * MemDiag Java Agent - Enhanced version with full lifecycle management.
@@ -149,9 +153,6 @@ public class MemDiagAgent {
         System.out.println("[MemDiag] Agent shutdown complete");
     }
 
-    /**
-     * Initialize optional components.
-     */
     private static void initializeOptionalComponents(AgentConfig config, AgentContext context) {
         // Phase 3: Initialize data collector and stats aggregator
         System.out.println("[MemDiag] Initializing data collection...");
@@ -160,6 +161,20 @@ public class MemDiagAgent {
         context.setDataCollector(dataCollector);
         context.setStatsAggregator(statsAggregator);
         System.out.println("[MemDiag] Data collection initialized");
+
+        // NEW: Inject into bootstrap
+        try {
+            URL agentJarUrl = MemDiagAgent.class.getProtectionDomain().getCodeSource().getLocation();
+            if (agentJarUrl != null) {
+                File jarFile = new File(agentJarUrl.toURI());
+                if (jarFile.exists()) {
+                    System.out.println("[MemDiag] Appending agent JAR to bootstrap search path: " + jarFile.getAbsolutePath());
+                    context.getInstrumentation().appendToBootstrapClassLoaderSearch(new JarFile(jarFile));
+                }
+            }
+        } catch (Exception e) {
+            System.err.println("[MemDiag] Failed to append to bootstrap search path: " + e.getMessage());
+        }
 
         // Phase 2: Initialize instrumentation manager
         if (config.isInstrumentationEnabled()) {
@@ -172,6 +187,14 @@ public class MemDiagAgent {
             context.setInstrumentManager(instrumentManager);
             instrumentManager.initialize();
             System.out.println("[MemDiag] Instrumentation manager initialized");
+
+            // Initialize the spy with transformers
+            if (context.getInstrumentManager() != null) {
+                 MemDiagSpy.init(
+                     context.getInstrumentManager().getAllocationTransformer(),
+                     context.getInstrumentManager().getMethodMonitorTransformer()
+                 );
+            }
         }
 
         // Phase 4: Initialize JVMTI loader
