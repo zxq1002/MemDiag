@@ -107,6 +107,18 @@ test_contains "histogram 默认输出" "memdiag histogram ${SIM_PID}" "CLASS NAM
 test_contains "histogram 限制行数" "memdiag histogram -l 5 ${SIM_PID}" "Total"
 test_contains "histogram --limit 选项" "memdiag histogram --limit 10 ${SIM_PID}" "OBJECTS"
 
+
+# ========== P0: --pid 选项测试 ==========
+echo ""
+echo "【P0 优先级】--pid 选项测试"
+echo "----------------------------------------"
+
+test_contains "histogram --pid 选项" "memdiag histogram --pid ${SIM_PID}" "CLASS NAME"
+test_contains "threads --pid 选项" "memdiag threads --pid ${SIM_PID}" "THREAD ANALYSIS"
+test_contains "diagnose --pid 选项" "memdiag diagnose --pid ${SIM_PID}" "DIAGNOSIS REPORT"
+test_contains "native --status --pid 选项" "memdiag native --status --pid ${SIM_PID}" "NATIVE MEMORY"
+test_contains "native --summary --pid 选项" "memdiag native --summary --pid ${SIM_PID}" "Total Virtual"
+
 # ========== P0: threads 命令测试 ==========
 echo ""
 echo "【P0 优先级】threads 命令测试"
@@ -201,6 +213,50 @@ echo ""
 echo "停止模拟器"
 kill ${SIM_PID} 2>/dev/null || true
 wait ${SIM_PID} 2>/dev/null || true
+
+# ========== P1: Enhanced Agent 功能测试 ==========
+echo ""
+echo "【P1 优先级】Enhanced Agent 功能测试"
+echo "=========================================="
+echo ""
+
+echo "步骤 A: 启动带 Agent 的 Demo 应用"
+echo "----------------------------------------"
+java -javaagent:/app/memdiag-agent.jar=port=6789 -Dmode=heap-high -Dlimit=100 MemDiagDemo &
+AGENT_SIM_PID=$!
+sleep 5
+echo "带 Agent 的模拟器 PID: ${AGENT_SIM_PID}"
+echo ""
+
+# ========== Phase 1: Agent 基础设施测试 ==========
+echo ""
+echo "Phase 1: Agent 基础设施测试"
+echo "----------------------------------------"
+
+test_contains "agent status 命令" "memdiag agent status" "AGENT STATUS"
+test_contains "agent config 命令" "memdiag agent config" "AGENT CONFIGURATION"
+test_contains "agent metrics 命令" "memdiag agent metrics" "AGENT METRICS"
+
+# ========== Phase 3: 数据采集层测试 ==========
+echo ""
+echo "Phase 3: 数据采集层测试"
+echo "----------------------------------------"
+
+test_contains "agent allocations --summary" "memdiag agent allocations --summary" "ALLOCATION ANALYSIS"
+test_contains "agent allocations --stats" "memdiag agent allocations --stats" "ALLOCATION ANALYSIS"
+
+# ========== Phase 4: JVMTI 集成测试 ==========
+echo ""
+echo "Phase 4: JVMTI 集成测试"
+echo "----------------------------------------"
+
+test_contains "agent jvmti 命令" "memdiag agent jvmti" "JVMTI STATUS"
+
+# ========== 停止带 Agent 的模拟器 ==========
+echo ""
+echo "停止带 Agent 的模拟器"
+kill ${AGENT_SIM_PID} 2>/dev/null || true
+wait ${AGENT_SIM_PID} 2>/dev/null || true
 
 # ========== 测试总结 ==========
 echo ""
