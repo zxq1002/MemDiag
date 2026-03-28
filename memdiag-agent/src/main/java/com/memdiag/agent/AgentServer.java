@@ -5,6 +5,7 @@ import com.google.gson.GsonBuilder;
 import com.memdiag.agent.collect.AllocationEvent;
 import com.memdiag.agent.collect.DataCollector;
 import com.memdiag.agent.collect.StatsAggregator;
+import com.memdiag.agent.jvmti.AgentJVMTILoader;
 import com.memdiag.core.nativeapi.NativeMemoryAnalyzer;
 import com.memdiag.core.nativeapi.NativeMemoryAnalyzerFactory;
 import com.sun.net.httpserver.HttpExchange;
@@ -71,6 +72,9 @@ public class AgentServer {
         server.createContext("/api/v1/allocations/top", new AllocationsTopHandler());
         server.createContext("/api/v1/allocations/rate", new AllocationsRateHandler());
         server.createContext("/api/v1/allocations/summary", new AllocationsSummaryHandler());
+
+        // New Phase 4 endpoints - JVMTI
+        server.createContext("/api/v1/jvmti/status", new JVMTIStatusHandler());
 
         server.start();
         running = true;
@@ -477,6 +481,45 @@ public class AgentServer {
                 } else {
                     response.put("success", false);
                     response.put("error", "Stats aggregator not available");
+                }
+
+                response.put("timestamp", System.currentTimeMillis());
+                sendJsonResponse(exchange, response, 200);
+            } catch (Exception e) {
+                sendErrorResponse(exchange, e.getMessage(), 500);
+            }
+        }
+    }
+
+    // ========== Phase 4: JVMTI API Handlers ==========
+
+    private class JVMTIStatusHandler implements HttpHandler {
+        @Override
+        public void handle(HttpExchange exchange) throws IOException {
+            try {
+                Map<String, Object> response = new HashMap<>();
+
+                if (AgentContext.isInitialized()) {
+                    AgentContext ctx = AgentContext.getInstance();
+                    AgentJVMTILoader loader = ctx.getJvmtiLoader();
+
+                    response.put("success", true);
+                    if (loader != null) {
+                        response.put("data", loader.getStatus());
+                    } else {
+                        Map<String, Object> status = new HashMap<>();
+                        status.put("enabled", ctx.getConfig().isJvmtiEnabled());
+                        status.put("autoLoad", ctx.getConfig().isJvmtiAutoLoad());
+                        status.put("loaded", false);
+                        status.put("available", false);
+                        status.put("error", "JVMTI loader not initialized");
+                        status.put("platform", System.getProperty("os.name"));
+                        status.put("arch", System.getProperty("os.arch"));
+                        response.put("data", status);
+                    }
+                } else {
+                    response.put("success", false);
+                    response.put("error", "Agent context not initialized");
                 }
 
                 response.put("timestamp", System.currentTimeMillis());

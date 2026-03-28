@@ -2,6 +2,7 @@ package com.memdiag.agent;
 
 import com.memdiag.agent.collect.DataCollector;
 import com.memdiag.agent.collect.StatsAggregator;
+import com.memdiag.agent.jvmti.AgentJVMTILoader;
 
 import java.lang.instrument.Instrumentation;
 
@@ -159,14 +160,17 @@ public class MemDiagAgent {
         context.setStatsAggregator(statsAggregator);
         System.out.println("[MemDiag] Data collection initialized");
 
-        // Phase 2: Initialize instrumentation manager (placeholder)
-        if (config.isInstrumentationEnabled()) {
-            System.out.println("[MemDiag] Instrumentation enabled (to be implemented in Phase 2)");
+        // Phase 4: Initialize JVMTI loader
+        if (config.isJvmtiEnabled() && config.isJvmtiAutoLoad()) {
+            System.out.println("[MemDiag] Initializing JVMTI...");
+            AgentJVMTILoader jvmtiLoader = new AgentJVMTILoader(config);
+            context.setJvmtiLoader(jvmtiLoader);
+            jvmtiLoader.load();
         }
 
-        // Phase 4: Initialize JVMTI loader (placeholder)
-        if (config.isJvmtiEnabled() && config.isJvmtiAutoLoad()) {
-            System.out.println("[MemDiag] JVMTI auto-load enabled (to be implemented in Phase 4)");
+        // Phase 2: Initialize instrumentation manager (placeholder)
+        if (config.isInstrumentationEnabled()) {
+            System.out.println("[MemDiag] Instrumentation enabled (to be implemented)");
         }
     }
 
