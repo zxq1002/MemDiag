@@ -57,6 +57,11 @@ public class AgentServer {
         server.createContext("/api/v1/native/regions", new NativeRegionsHandler());
         server.createContext("/api/v1/native/diagnose", new NativeDiagnoseHandler());
 
+        // New Phase 1 endpoints
+        server.createContext("/api/v1/agent/status", new AgentStatusHandler());
+        server.createContext("/api/v1/agent/config", new AgentConfigHandler());
+        server.createContext("/api/v1/agent/metrics", new AgentMetricsHandler());
+
         server.start();
         running = true;
         System.out.printf("[MemDiag] Agent server started on %s:%d%n", host, port);
@@ -196,6 +201,108 @@ public class AgentServer {
                 Map<String, Object> response = new HashMap<>();
                 response.put("success", true);
                 response.put("data", nativeAnalyzer.analyzeNativeLeaks());
+                sendJsonResponse(exchange, response, 200);
+            } catch (Exception e) {
+                sendErrorResponse(exchange, e.getMessage(), 500);
+            }
+        }
+    }
+
+    // ========== Phase 1: New Agent API Handlers ==========
+
+    private class AgentStatusHandler implements HttpHandler {
+        @Override
+        public void handle(HttpExchange exchange) throws IOException {
+            try {
+                Map<String, Object> status = new HashMap<>();
+
+                if (AgentContext.isInitialized()) {
+                    AgentContext ctx = AgentContext.getInstance();
+                    status.put("state", ctx.getState().name());
+                    status.put("uptimeMs", ctx.getUptimeMs());
+                    status.put("startTime", ctx.getStartTime());
+                    status.put("serverRunning", ctx.isServerRunning());
+                    status.put("instrumentationEnabled", ctx.getConfig().isInstrumentationEnabled());
+                    status.put("jvmtiEnabled", ctx.getConfig().isJvmtiEnabled());
+                    status.put("hasDataCollector", ctx.getDataCollector() != null);
+                    status.put("hasInstrumentManager", ctx.getInstrumentManager() != null);
+                    status.put("hasJvmtiLoader", ctx.getJvmtiLoader() != null);
+                } else {
+                    status.put("state", "UNINITIALIZED");
+                    status.put("message", "Agent context not initialized");
+                }
+
+                Map<String, Object> response = new HashMap<>();
+                response.put("success", true);
+                response.put("data", status);
+                response.put("timestamp", System.currentTimeMillis());
+                sendJsonResponse(exchange, response, 200);
+            } catch (Exception e) {
+                sendErrorResponse(exchange, e.getMessage(), 500);
+            }
+        }
+    }
+
+    private class AgentConfigHandler implements HttpHandler {
+        @Override
+        public void handle(HttpExchange exchange) throws IOException {
+            try {
+                String method = exchange.getRequestMethod();
+
+                if ("GET".equals(method)) {
+                    // Get current configuration
+                    Map<String, Object> response = new HashMap<>();
+                    response.put("success", true);
+
+                    if (AgentContext.isInitialized()) {
+                        AgentConfig config = AgentContext.getInstance().getConfig();
+                        response.put("data", config.toMap());
+                    } else {
+                        response.put("data", AgentConfig.defaults().toMap());
+                    }
+
+                    response.put("timestamp", System.currentTimeMillis());
+                    sendJsonResponse(exchange, response, 200);
+                } else if ("PUT".equals(method)) {
+                    // Update configuration (placeholder - requires restart for most changes)
+                    Map<String, Object> response = new HashMap<>();
+                    response.put("success", true);
+                    response.put("message", "Configuration update requires agent restart");
+                    response.put("timestamp", System.currentTimeMillis());
+                    sendJsonResponse(exchange, response, 200);
+                } else {
+                    sendErrorResponse(exchange, "Method not allowed", 405);
+                }
+            } catch (Exception e) {
+                sendErrorResponse(exchange, e.getMessage(), 500);
+            }
+        }
+    }
+
+    private class AgentMetricsHandler implements HttpHandler {
+        @Override
+        public void handle(HttpExchange exchange) throws IOException {
+            try {
+                Map<String, Object> metrics = new HashMap<>();
+
+                // JVM metrics
+                Runtime runtime = Runtime.getRuntime();
+                metrics.put("jvm.totalMemory", runtime.totalMemory());
+                metrics.put("jvm.freeMemory", runtime.freeMemory());
+                metrics.put("jvm.maxMemory", runtime.maxMemory());
+                metrics.put("jvm.availableProcessors", runtime.availableProcessors());
+
+                // Agent metrics
+                if (AgentContext.isInitialized()) {
+                    AgentContext ctx = AgentContext.getInstance();
+                    metrics.put("agent.uptimeMs", ctx.getUptimeMs());
+                    metrics.put("agent.state", ctx.getState().name());
+                }
+
+                Map<String, Object> response = new HashMap<>();
+                response.put("success", true);
+                response.put("data", metrics);
+                response.put("timestamp", System.currentTimeMillis());
                 sendJsonResponse(exchange, response, 200);
             } catch (Exception e) {
                 sendErrorResponse(exchange, e.getMessage(), 500);
