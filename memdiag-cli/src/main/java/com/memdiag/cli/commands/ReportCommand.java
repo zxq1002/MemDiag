@@ -1,6 +1,6 @@
 package com.memdiag.cli.commands;
 
-import com.memdiag.cli.client.AgentClient;
+import com.memdiag.core.agent.AgentClient;
 import com.memdiag.core.diagnose.DiagnosisEngine;
 import com.memdiag.core.diagnose.DiagnosisResult;
 import com.memdiag.core.heap.HeapAnalyzer;
@@ -56,7 +56,7 @@ public class ReportCommand extends BaseCommand {
             DiagnosisResult diagnosis;
 
             if (isAgentMode()) {
-                System.err.println("Connecting to agent " + agent + "...");
+                System.err.println("Connecting to agent " + parent.agent + "...");
                 AgentClient client = createAgentClient();
                 histogram = client.getHeapHistogram(limit);
                 threadDump = client.getThreadDump();

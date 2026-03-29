@@ -1,6 +1,6 @@
 package com.memdiag.cli.commands;
 
-import com.memdiag.cli.client.AgentClient;
+import com.memdiag.core.agent.AgentClient;
 import com.memdiag.core.heap.ClassStats;
 import com.memdiag.core.heap.HeapAnalyzer;
 import com.memdiag.core.heap.HeapHistogram;

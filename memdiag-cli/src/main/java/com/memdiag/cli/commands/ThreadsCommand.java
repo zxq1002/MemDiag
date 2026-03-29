@@ -1,6 +1,6 @@
 package com.memdiag.cli.commands;
 
-import com.memdiag.cli.client.AgentClient;
+import com.memdiag.core.agent.AgentClient;
 import com.memdiag.core.heap.JmxHeapAnalyzer;
 import com.memdiag.core.thread.StackFrame;
 import com.memdiag.core.thread.ThreadAnalyzer;

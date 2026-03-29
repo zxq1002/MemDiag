@@ -3,6 +3,9 @@ package com.memdiag.core.agent;
 import com.google.gson.Gson;
 import com.google.gson.JsonObject;
 import com.google.gson.JsonParser;
+import com.memdiag.core.diagnose.DiagnosisResult;
+import com.memdiag.core.heap.HeapHistogram;
+import com.memdiag.core.thread.ThreadDump;
 
 import java.io.BufferedReader;
 import java.io.IOException;
@@ -186,6 +189,17 @@ public class AgentClient {
         return get("/api/v1/allocations/summary");
     }
 
+    /**
+     * Get allocation summary as Map (for CLI compatibility).
+     */
+    public Map<String, Object> getAllocationsSummaryMap() {
+        JsonObject json = getAllocationsSummary();
+        if (json == null) {
+            return null;
+        }
+        return gson.fromJson(json, Map.class);
+    }
+
     // ========== Phase 3: Methods API ==========
 
     /**
@@ -193,6 +207,17 @@ public class AgentClient {
      */
     public JsonObject getMethodsStats(int limit) {
         return get("/api/v1/methods/stats?limit=" + limit);
+    }
+
+    /**
+     * Get method statistics as Map (for CLI compatibility).
+     */
+    public Map<String, Object> getMethodsStatsMap(int limit) {
+        JsonObject json = getMethodsStats(limit);
+        if (json == null) {
+            return null;
+        }
+        return gson.fromJson(json, Map.class);
     }
 
     /**
@@ -387,4 +412,69 @@ public class AgentClient {
     public int getPort() {
         return port;
     }
+
+    // ========== Legacy API compatibility ==========
+
+    /**
+     * Get heap histogram from agent (legacy endpoint).
+     *
+     * @param limit Maximum number of entries to return
+     * @return HeapHistogram, or null if request failed
+     */
+    public HeapHistogram getHeapHistogram(int limit) {
+        String raw = getRaw("/api/heap/histogram?limit=" + limit);
+        if (raw == null) {
+            return null;
+        }
+        try {
+            return gson.fromJson(raw, HeapHistogram.class);
+        } catch (Exception e) {
+            return null;
+        }
+    }
+
+    /**
+     * Get heap histogram (alias for getHeapHistogram).
+     *
+     * @param limit Maximum number of entries to return
+     * @return HeapHistogram, or null if request failed
+     */
+    public HeapHistogram getHistogram(int limit) {
+        return getHeapHistogram(limit);
+    }
+
+    /**
+     * Get thread dump from agent (legacy endpoint).
+     *
+     * @return ThreadDump, or null if request failed
+     */
+    public ThreadDump getThreadDump() {
+        String raw = getRaw("/api/threads");
+        if (raw == null) {
+            return null;
+        }
+        try {
+            return gson.fromJson(raw, ThreadDump.class);
+        } catch (Exception e) {
+            return null;
+        }
+    }
+
+    /**
+     * Get diagnosis from agent (legacy endpoint).
+     *
+     * @return DiagnosisResult, or null if request failed
+     */
+    public DiagnosisResult getDiagnosis() {
+        String raw = getRaw("/api/diagnose");
+        if (raw == null) {
+            return null;
+        }
+        try {
+            return gson.fromJson(raw, DiagnosisResult.class);
+        } catch (Exception e) {
+            return null;
+        }
+    }
+
 }

@@ -1,6 +1,6 @@
 package com.memdiag.cli.commands;
 
-import com.memdiag.cli.client.AgentClient;
+import com.memdiag.core.agent.AgentClient;
 import com.memdiag.core.diagnose.DiagnosisEngine;
 import com.memdiag.core.diagnose.DiagnosisResult;
 import com.memdiag.core.diagnose.Issue;

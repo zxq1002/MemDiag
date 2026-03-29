@@ -1,6 +1,6 @@
 package com.memdiag.cli.commands;
 
-import com.memdiag.cli.client.AgentClient;
+import com.memdiag.core.agent.AgentClient;
 import com.memdiag.core.diff.ClassDiff;
 import com.memdiag.core.diff.HeapDiff;
 import com.memdiag.core.diff.Snapshot;
