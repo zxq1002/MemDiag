@@ -19,6 +19,9 @@
   - [diff - 堆对比分析](#diff---堆对比分析)
   - [report - 报告生成](#report---报告生成)
   - [nmt - NMT 分析](#nmt---nmt-分析)
+  - [agent - Agent 管理](#agent---agent-管理)
+  - [allocations - 分配统计](#allocations---分配统计)
+  - [methods - 方法监控](#methods---方法监控)
 - [架构与实现原理](#架构与实现原理)
 - [高级配置](#高级配置)
 - [故障排除](#故障排除)
@@ -34,6 +37,8 @@ MemDiag 是一款功能全面的 JVM 内存诊断工具，专为生产环境设�
 - **多维度** - 支持堆内、堆外、线程等全方位分析
 - **智能化** - 内置诊断引擎，自动识别常见内存问题
 - **生产级** - 包含资源限流、环境预检等企业级特性
+- **字节码插桩** - Agent 模式下提供实时分配追踪和方法监控
+- **JVMTI 集成** - 自动检测并加载原生库，实现深层数据采集
 
 ---
 
@@ -45,8 +50,12 @@ MemDiag 是一款功能全面的 JVM 内存诊断工具，专为生产环境设�
 | **线程分析** | 线程状态、堆栈跟踪、死锁检测 |
 | **自动诊断** | 内存泄漏检测、配置问题识别、优化建议 |
 | **堆外内存** | /proc 解析、内存区域映射、库映射分析 |
-| **原生 Agent** | 动态挂载/卸载、JVMTI 事件监听 |
-| **分配追踪** | 堆外分配点追踪、泄漏点分析 |
+| **Java Agent** | 启动时加载/动态 attach、HTTP API 服务 |
+| **字节码插桩** | ByteBuffer 分配追踪、方法执行监控 |
+| **数据采集** | 环形缓冲区、统计聚合、定时快照 |
+| **JVMTI 集成** | 自动检测平台、优雅降级机制 |
+| **分配统计** | 实时分配速率、Top N 分配类型、趋势分析 |
+| **方法监控** | 方法执行时间、调用次数、慢方法识别 |
 | **快照管理** | 堆快照保存、加载、对比 |
 | **环境预检** | PID 验证、权限检查、JDK 兼容性检测 |
 
@@ -113,14 +122,18 @@ memdiag -h
 # Usage: memdiag [-hV] [COMMAND]
 # JVM Memory Diagnosis Tool
 # Commands:
-#   histogram  Show heap histogram
-#   threads    Show thread analysis
-#   diagnose   Run diagnosis and show issues
-#   native     Native memory analysis (Linux only)
-#   snapshot   Manage heap snapshots
-#   diff       Compare heap snapshots
-#   report     Generate complete diagnosis report
-#   nmt        Native Memory Tracking analysis
+#   histogram    Show heap histogram
+#   threads      Show thread analysis
+#   diagnose     Run diagnosis and show issues
+#   native       Native memory analysis (Linux only)
+#   snapshot     Manage heap snapshots
+#   diff         Compare heap snapshots
+#   report       Generate complete diagnosis report
+#   nmt          Native Memory Tracking analysis
+#   gc-roots     GC Root analysis (Java 11+)
+#   agent        Interact with a running MemDiag agent
+#   allocations  Show allocation statistics and trends
+#   methods      Show method monitoring statistics
 ```
 
 ### 第四步：第一个诊断
@@ -948,6 +961,151 @@ memdiag nmt --pid 12345
 
 ---
 
+### agent - Agent 管理
+
+**子命令**: `agent`
+
+管理和交互运行中的 MemDiag Agent。
+
+#### 功能说明
+
+- 查看 Agent 状态、配置、指标
+- 查看分配统计和趋势
+- 查看方法监控统计
+- 启用/禁用插桩功能
+- 查看 JVMTI 状态
+
+#### 子命令
+
+| 子命令 | 说明 |
+|--------|------|
+| `status` | 查看 Agent 状态 |
+| `config` | 查看/更新 Agent 配置 |
+| `metrics` | 查看 Agent 指标 |
+| `allocations` | 查看分配统计（支持 --recent/--stats/--top/--rate/--summary） |
+| `methods` | 查看方法监控统计（支持 --stats/--slow） |
+| `enable` | 启用插桩功能（allocation/methods） |
+| `disable` | 禁用插桩功能（allocation/methods） |
+| `jvmti` | 查看 JVMTI 状态 |
+
+#### 使用示例
+
+```bash
+# 查看 Agent 状态
+memdiag agent status
+
+# 查看分配统计
+memdiag agent allocations --summary
+
+# 查看方法统计
+memdiag agent methods --stats
+
+# 启用分配追踪
+memdiag agent enable allocation
+```
+
+---
+
+### allocations - 分配统计
+
+**子命令**: `allocations`
+
+显示内存分配统计和趋势（需要 Agent 模式）。
+
+#### 功能说明
+
+- 显示总分配量和分配次数
+- 显示当前分配速率
+- 显示分配趋势（增长/下降/稳定）
+- 显示 Top N 分配类型
+
+#### 选项
+
+| 选项 | 说明 | 默认值 |
+|-----|------|--------|
+| `-h, --help` | 显示帮助信息 | - |
+| `-l, --limit <n>` | 限制 Top 类型显示 | 10 |
+
+#### 使用示例
+
+```bash
+# 连接 Agent 查看分配统计
+memdiag allocations --agent localhost:6789
+
+# 指定限制数量
+memdiag allocations --agent localhost:6789 -l 20
+```
+
+#### 输出说明
+
+```
+Allocation Summary
+==================
+Total Allocated:  1,234,567,890 bytes (1,177.50 MB)
+Total Count:      45,678 allocations
+Current Rate:     10,234 bytes/sec (0.01 MB/sec)
+Trend:            INCREASING
+
+Top Types by Size:
+TYPE NAME                                          TOTAL SIZE        COUNT
+-------------------------------------------------------------------------------
+java.nio.HeapByteBuffer                          567,890,123       12,345
+[B                                                345,678,901       23,456
+...
+```
+
+---
+
+### methods - 方法监控
+
+**子命令**: `methods`
+
+显示方法监控统计（需要 Agent 模式）。
+
+#### 功能说明
+
+- 显示监控的方法总数
+- 显示按总时间排序的 Top N 方法
+- 显示按调用次数排序的 Top N 方法
+- 显示方法执行时间统计（总时间、平均时间、最大时间）
+
+#### 选项
+
+| 选项 | 说明 | 默认值 |
+|-----|------|--------|
+| `-h, --help` | 显示帮助信息 | - |
+| `-l, --limit <n>` | 限制方法列表 | 20 |
+| `-s, --sort <type>` | 排序方式: time, count | time |
+
+#### 使用示例
+
+```bash
+# 连接 Agent 查看方法统计（按总时间排序）
+memdiag methods --agent localhost:6789
+
+# 按调用次数排序
+memdiag methods --agent localhost:6789 -s count
+
+# 指定限制数量
+memdiag methods --agent localhost:6789 -l 30
+```
+
+#### 输出说明
+
+```
+Method Monitoring Statistics
+============================
+Total Methods Monitored: 128
+
+METHOD                                             COUNT    TOTAL(ms)     AVG(ms)     MAX(ms)
+---------------------------------------------------------------------------------------------------------
+com.example.MyService#processData                1,234     12,345.67       10.00       123.45
+com.example.MyService#validate                   5,678      8,765.43        1.54        45.67
+...
+```
+
+---
+
 ## 架构与实现原理
 
 ### 两种使用模式
@@ -965,8 +1123,10 @@ MemDiag 提供**两种使用模式**，通过 `--agent` 选项切换：
 | **状态保持** | ❌ 每次重新连接 | ✅ Agent 保持状态 |
 | **堆内存/线程分析** | ✅ | ✅ |
 | **堆外内存分析** | ✅（同一机器）| ✅（远程也可）|
-| **字节码插桩** | ❌ | ✅ 框架已就绪 |
-| **JVMTI 事件** | ❌ | ⏳ 框架已就绪 |
+| **字节码插桩** | ❌ | ✅ ByteBuffer 分配追踪 + 方法监控 |
+| **JVMTI 集成** | ❌ | ✅ 自动加载 + 优雅降级 |
+| **分配统计** | ❌ | ✅ 实时速率 + Top N + 趋势分析 |
+| **方法监控** | ❌ | ✅ 执行时间 + 调用次数 + 慢方法识别 |
 
 ---
 
