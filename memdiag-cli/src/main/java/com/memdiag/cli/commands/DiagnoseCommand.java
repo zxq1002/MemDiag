@@ -23,6 +23,10 @@ public class DiagnoseCommand extends BaseCommand {
             AgentClient client = createAgentClient();
             try {
                 result = client.getDiagnosis();
+                if (result == null) {
+                    System.err.println("Failed to get diagnosis from agent");
+                    return;
+                }
             } catch (Exception e) {
                 System.err.println("Failed to connect to agent: " + e.getMessage());
                 return;

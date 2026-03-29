@@ -32,6 +32,10 @@ public class ThreadsCommand extends BaseCommand {
             AgentClient client = createAgentClient();
             try {
                 dump = client.getThreadDump();
+                if (dump == null) {
+                    System.err.println("Failed to get thread dump from agent");
+                    return;
+                }
             } catch (Exception e) {
                 System.err.println("Failed to connect to agent: " + e.getMessage());
                 return;

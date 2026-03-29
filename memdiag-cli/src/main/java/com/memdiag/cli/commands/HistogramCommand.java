@@ -22,6 +22,10 @@ public class HistogramCommand extends BaseCommand {
             AgentClient client = createAgentClient();
             try {
                 histogram = client.getHeapHistogram(limit);
+                if (histogram == null) {
+                    System.err.println("Failed to get histogram from agent");
+                    return;
+                }
             } catch (Exception e) {
                 System.err.println("Failed to connect to agent: " + e.getMessage());
                 return;
