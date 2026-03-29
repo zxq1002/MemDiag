@@ -136,6 +136,20 @@ echo "----------------------------------------"
 test_contains "diagnose 基本功能" "memdiag diagnose ${SIM_PID}" "DIAGNOSIS REPORT"
 test_contains "diagnose 规则执行统计" "memdiag diagnose ${SIM_PID}" "Rules executed:"
 
+# ========== P0: nmt 命令测试 ==========
+echo ""
+echo "【P0 优先级】nmt 命令测试"
+echo "----------------------------------------"
+
+test_contains "nmt 命令帮助" "memdiag nmt -h" "Native Memory Tracking"
+
+# ========== P0: gc-roots 命令测试 ==========
+echo ""
+echo "【P0 优先级】gc-roots 命令测试"
+echo "----------------------------------------"
+
+test_contains "gc-roots 命令帮助" "memdiag gc-roots -h" "GC Root analysis"
+
 # ========== P0: snapshot 命令测试 ==========
 echo ""
 echo "【P0 优先级】snapshot 命令测试"
@@ -162,6 +176,8 @@ echo "----------------------------------------"
 
 test_contains "native --status" "memdiag native --status ${SIM_PID}" "NATIVE MEMORY"
 test_contains "native --summary" "memdiag native --summary ${SIM_PID}" "Total Virtual"
+test_contains "native --regions" "memdiag native --regions ${SIM_PID}" "MEMORY REGIONS"
+test_contains "native --diagnose" "memdiag native --diagnose ${SIM_PID}" "NATIVE MEMORY DIAGNOSIS"
 
 # ========== P1: 多架构原生库支持测试 ==========
 echo ""
@@ -236,18 +252,30 @@ echo "----------------------------------------"
 test_contains "agent status 命令" "memdiag agent status" "AGENT STATUS"
 test_contains "agent config 命令" "memdiag agent config" "AGENT CONFIGURATION"
 test_contains "agent metrics 命令" "memdiag agent metrics" "AGENT METRICS"
+test_contains "agent 命令帮助" "memdiag agent -h" "Interact with a running MemDiag agent"
 
-# ========== Phase 3: 数据采集层测试 ==========
+# ========== Phase 2: 数据采集层测试 ==========
 echo ""
-echo "Phase 3: 数据采集层测试"
+echo "Phase 2: 数据采集层测试"
 echo "----------------------------------------"
 
 test_contains "agent allocations --summary" "memdiag agent allocations --summary" "ALLOCATION ANALYSIS"
 test_contains "agent allocations --stats" "memdiag agent allocations --stats" "ALLOCATION ANALYSIS"
+test_contains "agent allocations --top" "memdiag agent allocations --top" "ALLOCATION ANALYSIS"
+test_contains "agent allocations --rate" "memdiag agent allocations --rate" "ALLOCATION ANALYSIS"
+test_contains "agent methods --stats" "memdiag agent methods --stats" "METHOD ANALYSIS"
 
-# ========== Phase 3: 新增顶层命令测试 ==========
+# ========== Phase 3: 仪器控制测试 ==========
 echo ""
-echo "Phase 3: 新增顶层命令测试"
+echo "Phase 3: 仪器控制测试"
+echo "----------------------------------------"
+
+test_contains "agent enable 命令帮助" "memdiag agent enable -h" "Enable instrumentation features"
+test_contains "agent disable 命令帮助" "memdiag agent disable -h" "Disable instrumentation features"
+
+# ========== Phase 4: 新增顶层命令测试 ==========
+echo ""
+echo "Phase 4: 新增顶层命令测试"
 echo "----------------------------------------"
 
 test_contains "allocations 命令帮助" "memdiag allocations -h" "allocations"
@@ -257,9 +285,9 @@ test_contains "methods 命令帮助" "memdiag methods -h" "methods"
 test_contains "allocations --agent 选项" "memdiag allocations --agent=localhost:6789" "Allocation Summary" 2>/dev/null || true
 test_contains "methods --agent 选项" "memdiag methods --agent=localhost:6789" "Method Monitoring" 2>/dev/null || true
 
-# ========== Phase 4: JVMTI 集成测试 ==========
+# ========== Phase 5: JVMTI 集成测试 ==========
 echo ""
-echo "Phase 4: JVMTI 集成测试"
+echo "Phase 5: JVMTI 集成测试"
 echo "----------------------------------------"
 
 test_contains "agent jvmti 命令" "memdiag agent jvmti" "JVMTI STATUS"
