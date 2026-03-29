@@ -1,0 +1,70 @@
+# JVMTI 功能测试环境 - 包含原生库编译
+FROM eclipse-temurin:17-jdk-focal
+
+# 安装必要的系统工具
+RUN apt-get update && apt-get install -y \
+    g++ \
+    cmake \
+    make \
+    procps \
+    python3 \
+    maven \
+    && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /app
+
+# 拷贝项目源码
+COPY pom.xml /app/
+COPY memdiag-core/pom.xml /app/memdiag-core/
+COPY memdiag-native/pom.xml /app/memdiag-native/
+COPY memdiag-agent/pom.xml /app/memdiag-agent/
+COPY memdiag-cli/pom.xml /app/memdiag-cli/
+
+COPY memdiag-core/src /app/memdiag-core/src/
+COPY memdiag-native/src /app/memdiag-native/src/
+COPY memdiag-agent/src /app/memdiag-agent/src/
+COPY memdiag-cli/src /app/memdiag-cli/src/
+
+# 第一步：编译原生库和项目（只构建需要的模块）
+RUN echo "=== Building with native library ===" \
+    && mvn clean install -pl memdiag-core,memdiag-native,memdiag-agent,memdiag-cli -am -DskipTests -Dcompile.native=true \
+    && echo "=== Native library built successfully ===" \
+    && ls -la memdiag-native/target/native/
+
+# 第二步：将原生库复制到资源目录，使其能被 classpath 加载
+RUN echo "=== Copying native library to resources ===" \
+    && mkdir -p memdiag-native/src/main/resources \
+    && cp memdiag-native/target/native/libmemdiag-agent.so memdiag-native/src/main/resources/ \
+    && mkdir -p memdiag-agent/src/main/resources \
+    && cp memdiag-native/target/native/libmemdiag-agent.so memdiag-agent/src/main/resources/ \
+    && ls -la memdiag-native/src/main/resources/
+
+# 第三步：重新打包以包含原生库
+RUN echo "=== Rebuilding with native library in jar ===" \
+    && mvn package -pl memdiag-native,memdiag-agent,memdiag-cli -am -DskipTests -Dmaven.javadoc.skip=true
+
+# 拷贝编译好的 jar 包
+RUN cp memdiag-cli/target/memdiag-cli-1.0.0-SNAPSHOT.jar /app/memdiag-cli.jar \
+    && cp memdiag-agent/target/memdiag-agent-1.0.0-SNAPSHOT.jar /app/memdiag-agent.jar \
+    && echo "=== Jar files prepared ===" \
+    && ls -la /app/*.jar
+
+# 验证 jar 包中包含原生库
+RUN echo "=== Verifying native library in jars ===" \
+    && jar tf /app/memdiag-agent.jar | grep -E "(libmemdiag|NativeLoader)" \
+    && echo "=== Verification complete ==="
+
+# 拷贝并编译 Demo
+COPY demo/MemDiagDemo.java /app/
+RUN javac MemDiagDemo.java
+
+# 预设默认 JVM 参数
+ENV JAVA_OPTS="-Xmx1G -Xms128M"
+
+# 创建 memdiag 快捷命令
+RUN echo '#!/bin/bash' > /usr/local/bin/memdiag && \
+    echo 'java -jar /app/memdiag-cli.jar "$@"' >> /usr/local/bin/memdiag && \
+    chmod +x /usr/local/bin/memdiag
+
+# 简单的启动脚本，保持容器运行
+CMD ["tail", "-f", "/dev/null"]

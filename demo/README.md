@@ -135,7 +135,24 @@ bash demo/start-test-suite.sh
 | P1 | native | --status, --summary, --regions | ✅ |
 | P1 | report | --format, --output | ✅ |
 
-### 4.3 手动运行测试
+### 4.3 JVMTI 加载场景测试
+
+提供专门的 JVMTI 测试套件，验证原生库加载成功后的增强功能：
+
+```bash
+# 运行 JVMTI 加载场景测试
+bash demo/test-jvmtitest.sh
+```
+
+这个测试会：
+1. 编译 JVMTI 原生库 (`libmemdiag-agent.so`)
+2. 将原生库打包到 agent jar 中
+3. 验证 JVMTI 状态显示为可用
+4. 验证所有基本功能在 JVMTI 环境下正常工作
+
+**注意**：由于 JNI 加载限制，JVMTI 可能无法在某些 Docker 环境中完全加载，但测试会验证优雅降级行为。
+
+### 4.4 手动运行测试
 
 如果需要在容器内手动运行测试：
 
@@ -187,3 +204,7 @@ docker exec -it memdiag-test-container bash
 | `demo/test-full-suite.sh` | 容器内测试执行脚本 |
 | `demo/start-test-suite.sh` | 测试套件启动脚本 |
 | `demo/Dockerfile.test` | 测试环境 Dockerfile |
+| `demo/test-jvmtitest.sh` | JVMTI 加载场景测试脚本 |
+| `demo/Dockerfile.jvmtitest` | JVMTI 测试环境 Dockerfile |
+| `demo/build-native.sh` | 原生库构建脚本 |
+| `demo/Dockerfile.native-build` | 原生库构建环境 Dockerfile |
