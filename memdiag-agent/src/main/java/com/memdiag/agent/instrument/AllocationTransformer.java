@@ -31,7 +31,9 @@ public class AllocationTransformer implements ClassFileTransformer {
 
     // Target classes for instrumentation (reserved for future use)
     private static final List<String> TARGET_CLASSES = List.of(
-        "java/nio/ByteBuffer"
+        "java/nio/ByteBuffer",
+        "sun/misc/Unsafe",
+        "jdk/internal/misc/Unsafe"
     );
 
     // Static reference for use by instrumented code
@@ -76,8 +78,10 @@ public class AllocationTransformer implements ClassFileTransformer {
     private boolean shouldTransform(String className) {
         if (className == null) return false;
 
-        // Explicitly allow ByteBuffer for tracking direct/heap buffers
-        if (className.equals("java/nio/ByteBuffer")) {
+        // Explicitly allow ByteBuffer and Unsafe for tracking allocations
+        if (className.equals("java/nio/ByteBuffer") || 
+            className.equals("sun/misc/Unsafe") || 
+            className.equals("jdk/internal/misc/Unsafe")) {
             return true;
         }
 
@@ -145,17 +149,48 @@ public class AllocationTransformer implements ClassFileTransformer {
 
         @Override
         public void visitMethodInsn(int opcode, String owner, String name, String descriptor, boolean isInterface) {
-            super.visitMethodInsn(opcode, owner, name, descriptor, isInterface);
+            // Track ByteBuffer allocations
             if (opcode == INVOKESTATIC && owner.equals("java/nio/ByteBuffer") &&
                 (name.equals("allocateDirect") || name.equals("allocate"))) {
-                // After allocateDirect/allocat, stack: [ByteBuffer]
+                super.visitMethodInsn(opcode, owner, name, descriptor, isInterface);
+                // After allocateDirect/allocate, stack: [ByteBuffer]
                 boolean isDirect = name.equals("allocateDirect");
                 mv.visitInsn(DUP);
                 mv.visitMethodInsn(INVOKEVIRTUAL, "java/nio/ByteBuffer", "capacity", "()I", false);
                 mv.visitInsn(I2L);
                 mv.visitLdcInsn(isDirect ? "java.nio.DirectByteBuffer" : "java.nio.HeapByteBuffer");
                 mv.visitMethodInsn(INVOKESTATIC, "com/memdiag/agent/instrument/MemDiagSpy", "recordAllocation", "(JLjava/lang/String;)V", false);
+                return;
             }
+
+            // Track Unsafe.allocateMemory
+            if (opcode == INVOKEVIRTUAL && (owner.equals("sun/misc/Unsafe") || owner.equals("jdk/internal/misc/Unsafe")) &&
+                (name.equals("allocateMemory") || name.equals("reallocateMemory"))) {
+                // Stack before: [Unsafe (ref), size (long)]
+                // We want: [address (long)] at the end, and call recordAllocation(size, type) in between.
+                
+                // 1. Duplicate size below Unsafe: [Unsafe, size] -> [size, Unsafe, size]
+                mv.visitInsn(DUP2_X1);
+                
+                // 2. Call original method: [size, Unsafe, size] -> [size, address]
+                super.visitMethodInsn(opcode, owner, name, descriptor, isInterface);
+                
+                // 3. Current stack: [size (long), address (long)]
+                // We need to call recordAllocation(size, type) and leave address on stack.
+                // Duplicate address below size: [size, address] -> [address, size, address]
+                mv.visitInsn(DUP2_X2);
+                
+                // 4. Remove top address: [address, size, address] -> [address, size]
+                mv.visitInsn(POP2);
+                
+                // 5. Call recordAllocation(size, type): [address, size] -> [address, size, type] -> [address]
+                mv.visitLdcInsn("native.UnsafeAllocation");
+                mv.visitMethodInsn(INVOKESTATIC, "com/memdiag/agent/instrument/MemDiagSpy", "recordAllocation", "(JLjava/lang/String;)V", false);
+                
+                return;
+            }
+
+            super.visitMethodInsn(opcode, owner, name, descriptor, isInterface);
         }
     }
 

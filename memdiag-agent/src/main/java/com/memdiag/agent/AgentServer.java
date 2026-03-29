@@ -308,14 +308,56 @@ public class AgentServer {
         public void handle(HttpExchange exchange) throws IOException {
             try {
                 NativeMemorySummary summary = nativeAnalyzer.getSummary();
+                
+                long directSize = summary.getDirectByteBufferSize();
+                long jniSize = summary.getJniAllocatedSize();
+                long codeCacheSize = summary.getCodeCacheSize();
+                long metaspaceSize = 0;
+
+                // Supplement missing data from JMX if possible
+                try {
+                    for (java.lang.management.MemoryPoolMXBean pool : java.lang.management.ManagementFactory.getMemoryPoolMXBeans()) {
+                        String name = pool.getName();
+                        if (name.contains("Metaspace") || name.contains("Compressed Class Space")) {
+                            metaspaceSize += pool.getUsage().getUsed();
+                        } else if (name.contains("Code Cache") || name.contains("CodeHeap")) {
+                            if (codeCacheSize == 0) {
+                                codeCacheSize += pool.getUsage().getUsed();
+                            }
+                        }
+                    }
+
+                    // Try to get Direct memory via PlatformManagedObject
+                    if (directSize == 0) {
+                        try {
+                            ObjectName directName = new ObjectName("java.nio:type=BufferPool,name=direct");
+                            directSize = (long) ManagementFactory.getPlatformMBeanServer().getAttribute(directName, "MemoryUsed");
+                        } catch (Exception ignored) {}
+                    }
+                } catch (Exception e) {
+                    System.err.println("[MemDiag] Error fetching JMX metrics for native summary: " + e.getMessage());
+                }
+
                 Map<String, Object> data = new HashMap<>();
                 data.put("totalResident", summary.getTotalResident());
                 data.put("totalVirtual", summary.getTotalVirtual());
-                data.put("directByteBufferSize", summary.getDirectByteBufferSize());
-                data.put("jniAllocatedSize", summary.getJniAllocatedSize());
+                data.put("directByteBufferSize", directSize);
+                data.put("jniAllocatedSize", jniSize);
                 data.put("threadStackSize", summary.getThreadStackSize());
-                data.put("codeCacheSize", summary.getCodeCacheSize());
-                data.put("breakdownByCategory", summary.getBreakdownByCategory());
+                data.put("codeCacheSize", codeCacheSize);
+                
+                Map<String, Long> breakdown = new HashMap<>(summary.getBreakdownByCategory());
+                if (!breakdown.containsKey("Metaspace") && metaspaceSize > 0) {
+                    breakdown.put("Metaspace", metaspaceSize);
+                }
+                if (!breakdown.containsKey("Code Cache") && codeCacheSize > 0) {
+                    breakdown.put("Code Cache", codeCacheSize);
+                }
+                if (!breakdown.containsKey("Direct Buffer") && directSize > 0) {
+                    breakdown.put("Direct Buffer", directSize);
+                }
+                
+                data.put("breakdownByCategory", breakdown);
                 sendSuccess(exchange, data);
             } catch (Exception e) {
                 sendError(exchange, e.getMessage(), 500);
