@@ -2247,6 +2247,7 @@ MemDiag 提供基于 Spring Boot 的 Web 后端服务，支持通过 REST API �
 ### 功能特性
 
 - **多连接管理** - 同时连接和管理多个 JVM 进程
+- **双模连接** - 支持 JMX 模式和 Agent 模式两种连接方式
 - **REST API** - 提供完整的分析能力 HTTP 接口
 - **实时监控** - WebSocket 支持实时推送分析数据
 - **健康检查** - 集成 Spring Boot Actuator
@@ -2274,10 +2275,10 @@ java -jar target/memdiag-web-1.0.0-SNAPSHOT.jar
 | 端点 | 方法 | 说明 |
 |------|------|------|
 | `/api/v1/connections` | GET | 获取所有连接 |
-| `/api/v1/connections/{id}` | POST | 创建新连接（可选 pid 参数） |
+| `/api/v1/connections/{id}` | POST | 创建新连接（target 参数：pid 或 host:port） |
 | `/api/v1/connections/{id}` | DELETE | 断开连接 |
 
-#### 分析接口
+#### 核心分析接口（JMX/Agent 双模）
 
 | 端点 | 方法 | 说明 |
 |------|------|------|
@@ -2285,6 +2286,57 @@ java -jar target/memdiag-web-1.0.0-SNAPSHOT.jar
 | `/api/v1/threads/{id}` | GET | 获取线程分析 |
 | `/api/v1/diagnose/{id}` | GET | 运行自动诊断 |
 | `/api/v1/nmt/{id}` | GET | 获取 NMT 分析（detail 参数） |
+
+#### Agent API（仅 Agent 模式）
+
+| 端点 | 方法 | 说明 |
+|------|------|------|
+| `/api/v1/agent/status/{id}` | GET | 获取 Agent 状态 |
+| `/api/v1/agent/config/{id}` | GET | 获取 Agent 配置 |
+| `/api/v1/agent/metrics/{id}` | GET | 获取 Agent 指标 |
+| `/api/v1/agent/detach/{id}` | POST | 请求 Agent 卸载 |
+
+#### Native 内存 API（仅 Agent 模式）
+
+| 端点 | 方法 | 说明 |
+|------|------|------|
+| `/api/v1/native/status/{id}` | GET | Native 分析器状态 |
+| `/api/v1/native/summary/{id}` | GET | Native 内存摘要 |
+| `/api/v1/native/regions/{id}` | GET | 内存区域列表 |
+| `/api/v1/native/diagnose/{id}` | GET | Native 泄漏诊断 |
+
+#### 分配追踪 API（仅 Agent 模式）
+
+| 端点 | 方法 | 说明 |
+|------|------|------|
+| `/api/v1/allocations/recent/{id}` | GET | 最近分配事件（limit 参数） |
+| `/api/v1/allocations/stats/{id}` | GET | 分配统计 |
+| `/api/v1/allocations/top/{id}` | GET | Top N 分配类型（limit 参数） |
+| `/api/v1/allocations/rate/{id}` | GET | 分配速率 |
+| `/api/v1/allocations/summary/{id}` | GET | 分配摘要 |
+
+#### 方法监控 API（仅 Agent 模式）
+
+| 端点 | 方法 | 说明 |
+|------|------|------|
+| `/api/v1/methods/stats/{id}` | GET | 方法统计（limit 参数） |
+| `/api/v1/methods/slow/{id}` | GET | 慢方法列表（limit, thresholdMs 参数） |
+
+#### 仪器控制 API（仅 Agent 模式）
+
+| 端点 | 方法 | 说明 |
+|------|------|------|
+| `/api/v1/instrumentation/status/{id}` | GET | 仪器状态 |
+| `/api/v1/instrumentation/allocation/enable/{id}` | POST | 启用分配追踪 |
+| `/api/v1/instrumentation/allocation/disable/{id}` | POST | 禁用分配追踪 |
+| `/api/v1/instrumentation/methods/enable/{id}` | POST | 启用方法监控 |
+| `/api/v1/instrumentation/methods/disable/{id}` | POST | 禁用方法监控 |
+
+#### JVMTI API（仅 Agent 模式）
+
+| 端点 | 方法 | 说明 |
+|------|------|------|
+| `/api/v1/jvmti/status/{id}` | GET | JVMTI 状态 |
 
 #### Actuator 端点
 
@@ -2299,14 +2351,17 @@ java -jar target/memdiag-web-1.0.0-SNAPSHOT.jar
 #### 1. 连接到目标 JVM
 
 ```bash
-# 连接到本地 JVM（当前进程）
+# JMX 模式：连接到本地 JVM（当前进程）
 curl -X POST "http://localhost:8080/api/v1/connections/local"
 
-# 连接到指定 PID 的 JVM
-curl -X POST "http://localhost:8080/api/v1/connections/myapp?pid=12345"
+# JMX 模式：连接到指定 PID 的 JVM
+curl -X POST "http://localhost:8080/api/v1/connections/myapp?target=12345"
+
+# Agent 模式：连接到运行 MemDiag Agent 的 JVM
+curl -X POST "http://localhost:8080/api/v1/connections/myapp-agent?target=localhost:6789"
 ```
 
-#### 2. 获取分析数据
+#### 2. 获取分析数据（JMX/Agent 双模通用）
 
 ```bash
 # 获取堆直方图（前 20 名）
@@ -2322,7 +2377,32 @@ curl "http://localhost:8080/api/v1/diagnose/myapp"
 curl "http://localhost:8080/api/v1/nmt/myapp?detail=true"
 ```
 
-#### 3. 断开连接
+#### 3. Agent 模式特有功能
+
+```bash
+# 获取 Agent 状态
+curl "http://localhost:8080/api/v1/agent/status/myapp-agent"
+
+# 获取 Native 内存摘要
+curl "http://localhost:8080/api/v1/native/summary/myapp-agent"
+
+# 获取分配统计
+curl "http://localhost:8080/api/v1/allocations/stats/myapp-agent"
+
+# 获取 Top N 分配类型
+curl "http://localhost:8080/api/v1/allocations/top/myapp-agent?limit=10"
+
+# 获取方法统计
+curl "http://localhost:8080/api/v1/methods/stats/myapp-agent?limit=20"
+
+# 启用分配追踪
+curl -X POST "http://localhost:8080/api/v1/instrumentation/allocation/enable/myapp-agent"
+
+# 启用方法监控
+curl -X POST "http://localhost:8080/api/v1/instrumentation/methods/enable/myapp-agent"
+```
+
+#### 4. 断开连接
 
 ```bash
 curl -X DELETE "http://localhost:8080/api/v1/connections/myapp"
