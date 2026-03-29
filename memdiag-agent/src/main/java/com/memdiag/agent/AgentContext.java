@@ -47,10 +47,10 @@ public class AgentContext {
      */
     public static synchronized AgentContext initialize(Instrumentation instrumentation, AgentConfig config) {
         if (instance != null) {
-            if (instance.getState() == AgentState.STOPPED) {
+            if (instance.getState() == AgentState.STOPPED || instance.getState() == AgentState.UNINITIALIZED) {
                 return instance;
             }
-            throw new IllegalStateException("AgentContext already initialized and not stopped");
+            throw new IllegalStateException("AgentContext already initialized and running (state: " + instance.getState() + ")");
         }
         instance = new AgentContext(instrumentation, config);
         return instance;
