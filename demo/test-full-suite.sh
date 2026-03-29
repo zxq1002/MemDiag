@@ -270,8 +270,8 @@ echo ""
 echo "Phase 3: 仪器控制测试"
 echo "----------------------------------------"
 
-test_contains "agent enable 命令帮助" "memdiag agent enable -h" "Enable instrumentation features"
-test_contains "agent disable 命令帮助" "memdiag agent disable -h" "Disable instrumentation features"
+test_contains "agent enable 命令帮助" "memdiag agent enable" "Enable instrumentation features"
+test_contains "agent disable 命令帮助" "memdiag agent disable" "Disable instrumentation features"
 
 # ========== Phase 4: 新增顶层命令测试 ==========
 echo ""
