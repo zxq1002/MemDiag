@@ -34,8 +34,13 @@ public class MemDiagAgent {
 
     private static synchronized void initialize(String agentArgs, Instrumentation inst, boolean isAttach) {
         if (AgentContext.isInitialized()) {
-            System.out.println("[MemDiag] Agent already initialized");
-            return;
+            AgentContext context = AgentContext.getInstance();
+            if (context.getState() != AgentContext.AgentState.STOPPED) {
+                System.out.println("[MemDiag] Agent already initialized and running");
+                return;
+            }
+            System.out.println("[MemDiag] Agent found in STOPPED state, restarting...");
+            context.reset();
         }
 
         System.out.println("");
@@ -43,7 +48,7 @@ public class MemDiagAgent {
         System.out.println("║                    MemDiag Agent Starting                       ║");
         System.out.println("╚═══════════════════════════════════════════════════════════════╝");
         if (isAttach) {
-            System.out.println("[MemDiag] Attaching to running JVM...");
+            System.out.println("[MemDiag] Attaching/Restarting Agent...");
         } else {
             System.out.println("[MemDiag] Starting with premain...");
         }
@@ -53,7 +58,7 @@ public class MemDiagAgent {
         AgentContext context = AgentContext.initialize(inst, config);
         context.setState(AgentContext.AgentState.INITIALIZING);
 
-        // Initialize components BEFORE starting server
+        // Initialize components (only if not already done)
         initializeOptionalComponents(config, context);
 
         if (startServer(config, context, inst)) {
@@ -66,6 +71,9 @@ public class MemDiagAgent {
             return;
         }
 
+        // Add shutdown hook if it's the first time (not needed for restart as hook remains)
+        // But Runtime hooks are per-application, not per-attach. 
+        // Let's just add it, duplicate hooks on the same thread object won't be added.
         addShutdownHook(context);
 
         // Print final status summary
@@ -101,10 +109,10 @@ public class MemDiagAgent {
         System.out.println("└─────────────────────────────────────────────────────────────────┘");
         System.out.println("");
         System.out.println("[MemDiag] Available commands:");
-        System.out.println("  memdiag --agent=" + config.getHttpHost() + ":" + config.getHttpPort() + " histogram");
-        System.out.println("  memdiag --agent=" + config.getHttpHost() + ":" + config.getHttpPort() + " threads");
-        System.out.println("  memdiag --agent=" + config.getHttpHost() + ":" + config.getHttpPort() + " diagnose");
-        System.out.println("  memdiag --agent=" + config.getHttpHost() + ":" + config.getHttpPort() + " allocations");
+        System.out.println("  memdiag --agent=" + config.getHostPortString() + " histogram");
+        System.out.println("  memdiag --agent=" + config.getHostPortString() + " threads");
+        System.out.println("  memdiag --agent=" + config.getHostPortString() + " diagnose");
+        System.out.println("  memdiag --agent=" + config.getHostPortString() + " allocations");
         System.out.println("");
     }
 
@@ -116,15 +124,20 @@ public class MemDiagAgent {
             server = agentServer;
             return true;
         } catch (Exception e) {
+            System.err.println("[MemDiag] Failed to start AgentServer: " + e.getMessage());
             e.printStackTrace();
             return false;
         }
     }
 
     private static void addShutdownHook(AgentContext context) {
-        Runtime.getRuntime().addShutdownHook(new Thread(() -> {
-            shutdownAgent(context);
-        }, "MemDiag-Shutdown-Hook"));
+        try {
+            Runtime.getRuntime().addShutdownHook(new Thread(() -> {
+                shutdownAgent(context);
+            }, "MemDiag-Shutdown-Hook"));
+        } catch (IllegalStateException ignored) {
+            // Already shutting down
+        }
     }
 
     public static synchronized void shutdownAgent(AgentContext context) {
@@ -140,56 +153,78 @@ public class MemDiagAgent {
         if (agentServer != null) {
             try {
                 agentServer.stop();
-            } catch (Exception e) {}
+            } catch (Exception e) {
+                System.err.println("[MemDiag] Error stopping server: " + e.getMessage());
+            }
         }
         context.shutdownScheduler();
         context.setState(AgentContext.AgentState.STOPPED);
     }
 
     private static void initializeOptionalComponents(AgentConfig config, AgentContext context) {
-        DataCollector dataCollector = new DataCollector(config.getRingBufferSize());
-        StatsAggregator statsAggregator = new StatsAggregator(dataCollector);
-        context.setDataCollector(dataCollector);
-        context.setStatsAggregator(statsAggregator);
+        if (context.getDataCollector() == null) {
+            DataCollector dataCollector = new DataCollector(config.getRingBufferSize());
+            StatsAggregator statsAggregator = new StatsAggregator(dataCollector);
+            context.setDataCollector(dataCollector);
+            context.setStatsAggregator(statsAggregator);
+        }
 
-        // Start periodic snapshot task
-        context.startScheduler().scheduleAtFixedRate(
-            statsAggregator::takeSnapshot,
-            1, 1, java.util.concurrent.TimeUnit.SECONDS
-        );
+        // Ensure periodic snapshot task is running
+        if (context.getScheduler() == null || context.getScheduler().isShutdown()) {
+            context.startScheduler().scheduleAtFixedRate(
+                context.getStatsAggregator()::takeSnapshot,
+                1, 1, java.util.concurrent.TimeUnit.SECONDS
+            );
+        }
 
         // Inject MemDiagSpy via a dedicated small JAR to avoid LinkageError
+        // This only needs to happen once per JVM session
         try {
-            File spyJar = createSpyJar();
-            System.out.println("[MemDiag] Created Spy JAR: " + spyJar.getAbsolutePath());
-            context.getInstrumentation().appendToBootstrapClassLoaderSearch(new JarFile(spyJar));
+            boolean alreadyInjected = false;
+            for (Class<?> c : context.getInstrumentation().getAllLoadedClasses()) {
+                if (c.getName().equals("com.memdiag.agent.instrument.MemDiagSpy")) {
+                    alreadyInjected = true;
+                    break;
+                }
+            }
+            
+            if (!alreadyInjected) {
+                File spyJar = createSpyJar();
+                System.out.println("[MemDiag] Created Spy JAR: " + spyJar.getAbsolutePath());
+                context.getInstrumentation().appendToBootstrapClassLoaderSearch(new JarFile(spyJar));
+            }
         } catch (Exception e) {
             System.err.println("[MemDiag] Failed to inject MemDiagSpy: " + e.getMessage());
-            e.printStackTrace();
         }
 
         if (config.isInstrumentationEnabled()) {
-            InstrumentManager instrumentManager = new InstrumentManager(context.getInstrumentation(), config, dataCollector);
-            context.setInstrumentManager(instrumentManager);
-            instrumentManager.initialize();
-            
-            // Initialize the spy with transformers
-            MemDiagSpy.init(
-                instrumentManager.getAllocationTransformer(),
-                instrumentManager.getMethodMonitorTransformer()
-            );
+            if (context.getInstrumentManager() == null) {
+                InstrumentManager instrumentManager = new InstrumentManager(context.getInstrumentation(), config, context.getDataCollector());
+                context.setInstrumentManager(instrumentManager);
+                instrumentManager.initialize();
+                
+                // Initialize the spy with transformers
+                MemDiagSpy.init(
+                    instrumentManager.getAllocationTransformer(),
+                    instrumentManager.getMethodMonitorTransformer()
+                );
+            }
 
-            // Enable tracking
-            instrumentManager.enableAllocationTracking();
+            // Re-enable tracking if needed
+            context.getInstrumentManager().enableAllocationTracking();
             if (config.isMethodMonitoringEnabled()) {
-                instrumentManager.enableMethodMonitoring();
+                context.getInstrumentManager().enableMethodMonitoring();
             }
         }
 
         if (config.isJvmtiEnabled() && config.isJvmtiAutoLoad()) {
-            AgentJVMTILoader jvmtiLoader = new AgentJVMTILoader(config);
-            context.setJvmtiLoader(jvmtiLoader);
-            jvmtiLoader.load();
+            if (context.getJvmtiLoader() == null) {
+                AgentJVMTILoader jvmtiLoader = new AgentJVMTILoader(config);
+                context.setJvmtiLoader(jvmtiLoader);
+                jvmtiLoader.load();
+            } else if (!context.getJvmtiLoader().isAvailable()) {
+                context.getJvmtiLoader().load();
+            }
         }
     }
 

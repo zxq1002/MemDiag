@@ -43,14 +43,29 @@ public class AgentContext {
     }
 
     /**
-     * Initialize the agent context. Must be called once.
+     * Initialize the agent context.
      */
     public static synchronized AgentContext initialize(Instrumentation instrumentation, AgentConfig config) {
         if (instance != null) {
-            throw new IllegalStateException("AgentContext already initialized");
+            if (instance.getState() == AgentState.STOPPED) {
+                return instance;
+            }
+            throw new IllegalStateException("AgentContext already initialized and not stopped");
         }
         instance = new AgentContext(instrumentation, config);
         return instance;
+    }
+
+    /**
+     * Reset the context for restart (clears server and scheduler).
+     */
+    public synchronized void reset() {
+        if (state != AgentState.STOPPED) {
+            throw new IllegalStateException("Cannot reset context unless it is in STOPPED state");
+        }
+        this.server = null;
+        this.scheduler = null;
+        this.state = AgentState.UNINITIALIZED;
     }
 
     /**
