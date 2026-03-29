@@ -2,6 +2,13 @@ package com.memdiag.agent;
 
 import com.google.gson.Gson;
 import com.google.gson.GsonBuilder;
+import com.google.gson.JsonDeserializationContext;
+import com.google.gson.JsonDeserializer;
+import com.google.gson.JsonElement;
+import com.google.gson.JsonParseException;
+import com.google.gson.JsonPrimitive;
+import com.google.gson.JsonSerializationContext;
+import com.google.gson.JsonSerializer;
 import com.memdiag.agent.collect.AllocationEvent;
 import com.memdiag.agent.collect.DataCollector;
 import com.memdiag.agent.collect.StatsAggregator;
@@ -35,6 +42,8 @@ import java.lang.instrument.Instrumentation;
 import java.lang.management.ManagementFactory;
 import java.lang.management.ThreadMXBean;
 import java.net.InetSocketAddress;
+import java.lang.reflect.Type;
+import java.time.Instant;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
@@ -43,6 +52,22 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 
 public class AgentServer {
+
+    /**
+     * TypeAdapter for java.time.Instant to work with Gson.
+     */
+    private static class InstantTypeAdapter implements JsonSerializer<Instant>, JsonDeserializer<Instant> {
+        @Override
+        public JsonElement serialize(Instant src, Type typeOfSrc, JsonSerializationContext context) {
+            return new JsonPrimitive(src.toString());
+        }
+
+        @Override
+        public Instant deserialize(JsonElement json, Type typeOfT, JsonDeserializationContext context)
+                throws JsonParseException {
+            return Instant.parse(json.getAsString());
+        }
+    }
 
     private final String host;
     private final int port;
@@ -61,7 +86,10 @@ public class AgentServer {
         this.instrumentation = instrumentation;
         this.nativeAnalyzer = NativeMemoryAnalyzerFactory.getInstance();
         this.threadMXBean = ManagementFactory.getThreadMXBean();
-        this.gson = new GsonBuilder().setPrettyPrinting().create();
+        this.gson = new GsonBuilder()
+                .setPrettyPrinting()
+                .registerTypeAdapter(Instant.class, new InstantTypeAdapter())
+                .create();
 
         if (threadMXBean.isThreadCpuTimeSupported()) {
             threadMXBean.setThreadCpuTimeEnabled(true);
