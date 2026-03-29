@@ -163,6 +163,10 @@ public class AgentConfig {
         return httpPort;
     }
 
+    public String getHostPortString() {
+        return httpHost + ":" + httpPort;
+    }
+
     public boolean isInstrumentationEnabled() {
         return instrumentationEnabled;
     }
