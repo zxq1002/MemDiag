@@ -277,8 +277,10 @@ public class AgentServer {
                 new Thread(() -> {
                     try {
                         Thread.sleep(500);
-                        stop();
+                        // Correctly update state and shutdown components
+                        MemDiagAgent.shutdownAgent(null);
                     } catch (Exception e) {
+                        e.printStackTrace();
                     }
                 }).start();
             } catch (Exception e) {

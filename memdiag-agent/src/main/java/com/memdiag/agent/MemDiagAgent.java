@@ -35,12 +35,18 @@ public class MemDiagAgent {
     private static synchronized void initialize(String agentArgs, Instrumentation inst, boolean isAttach) {
         if (AgentContext.isInitialized()) {
             AgentContext context = AgentContext.getInstance();
-            if (context.getState() != AgentContext.AgentState.STOPPED) {
+            // If stopped OR if the server is simply not running (inconsistent state), allow restart
+            if (context.getState() == AgentContext.AgentState.STOPPED || !context.isServerRunning()) {
+                System.out.println("[MemDiag] Agent found in STOPPED or inconsistent state, restarting...");
+                if (context.getState() != AgentContext.AgentState.STOPPED) {
+                    // Force set to STOPPED so reset() works
+                    context.setState(AgentContext.AgentState.STOPPED);
+                }
+                context.reset();
+            } else {
                 System.out.println("[MemDiag] Agent already initialized and running");
                 return;
             }
-            System.out.println("[MemDiag] Agent found in STOPPED state, restarting...");
-            context.reset();
         }
 
         System.out.println("");
