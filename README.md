@@ -199,21 +199,53 @@ MemDiag 采用**子命令**模式，结构清晰。
 | `-h, --help` | 显示帮助信息 | - |
 | `-l, --limit <n>` | 限制输出行数 | 20 |
 
-#### 使用示例
+#### 使用场景示例
+
+**场景 1: 应用响应变慢，怀疑内存问题**
+```bash
+# 先查看堆内存总体分布，看哪些类占用最多
+memdiag histogram --pid 12345
+
+# 如果发现某个类特别大，增加显示行数看更多细节
+memdiag histogram --pid 12345 -l 50
+```
+
+**场景 2: 发现内存持续增长，需要建立基线**
+```bash
+# 在应用启动后保存当前堆状态作为基线
+memdiag snapshot --save --id=baseline --pid 12345
+
+# 运行一段时间后，再次查看堆分布
+memdiag histogram --pid 12345
+
+# 对比看哪些类增长最多
+memdiag diff --baseline=baseline --pid 12345
+```
+
+**场景 3: OOM 发生后，快速分析现场**
+```bash
+# OOM 后立即查看堆直方图（注意：目标 JVM 可能已经不稳定）
+memdiag histogram --pid 12345 -l 100
+
+# 保存快照供后续离线分析
+memdiag snapshot --save --id=post-oom --pid 12345
+```
+
+#### 命令使用示例
 
 ```bash
-# 示例 1: 分析当前 JVM（默认前 20 行）
+# 基本用法: 分析当前 JVM（默认前 20 行）
 memdiag histogram
 
-# 示例 2: 指定输出行数
+# 指定输出行数
 memdiag histogram -l 50
 memdiag histogram --limit 100
 
-# 示例 3: 分析指定进程（使用 --pid）
+# 分析指定进程（使用 --pid）
 memdiag histogram --pid 12345
 memdiag histogram --pid 12345 -l 20
 
-# 示例 4: 分析指定进程（使用位置参数）
+# 分析指定进程（使用位置参数）
 memdiag histogram 12345
 memdiag histogram 12345 -l 50
 ```
@@ -263,21 +295,52 @@ Total                                         39,724      54,250,672
 | `-l, --limit <n>` | 限制显示线程数 | 20 |
 | `-s, --stacks` | 显示完整堆栈跟踪 | false |
 
-#### 使用示例
+#### 使用场景示例
+
+**场景 1: 应用卡死，无响应**
+```bash
+# 先查看线程状态概览，看是否有大量 BLOCKED 或 WAITING 线程
+memdiag threads --pid 12345
+
+# 如果发现有阻塞线程，查看完整堆栈定位死锁或阻塞点
+memdiag threads --pid 12345 -s
+```
+
+**场景 2: CPU 使用率过高**
+```bash
+# 查看线程状态，看是否有过多 RUNNABLE 线程
+memdiag threads --pid 12345
+
+# 查看 RUNNABLE 线程的堆栈，找出消耗 CPU 的代码
+memdiag threads --pid 12345 -s | grep -A 20 "RUNNABLE"
+```
+
+**场景 3: 偶发超时，需要诊断**
+```bash
+# 定时采样线程状态，对比分析
+memdiag threads --pid 12345 > threads_$(date +%H%M%S).txt
+sleep 10
+memdiag threads --pid 12345 > threads_$(date +%H%M%S).txt
+
+# 对比看哪些线程状态发生了变化
+diff threads_*.txt
+```
+
+#### 命令使用示例
 
 ```bash
-# 示例 1: 显示线程概览
+# 基本用法: 显示线程概览
 memdiag threads
 
-# 示例 2: 显示完整堆栈跟踪
+# 显示完整堆栈跟踪
 memdiag threads -s
 memdiag threads --stacks
 
-# 示例 3: 分析指定进程的线程
+# 分析指定进程的线程
 memdiag threads --pid 12345
 memdiag threads --pid 12345 -s
 
-# 示例 4: 位置参数形式
+# 位置参数形式
 memdiag threads 12345
 memdiag threads 12345 -s -l 10
 ```
@@ -338,13 +401,42 @@ TID      NAME                           STATE              BLOCKED     WAITED
 |-----|------|
 | `-h, --help` | 显示帮助信息 |
 
-#### 使用示例
+#### 使用场景示例
+
+**场景 1: 首次排查问题，快速了解整体状况**
+```bash
+# 运行完整诊断，获取全面的问题分析
+memdiag diagnose --pid 12345
+
+# 根据诊断结果的建议，决定下一步使用哪个命令深入分析
+```
+
+**场景 2: 定期健康检查**
+```bash
+# 每天/每小时运行一次诊断，建立健康基线
+memdiag diagnose --pid 12345 > health_check_$(date +%Y%m%d_%H%M).log
+
+# 对比历史诊断结果，看是否有新问题出现
+diff health_check_*.log
+```
+
+**场景 3: 问题复现后，先运行诊断再深入**
+```bash
+# 问题发生后，先用 diagnose 快速定位问题方向
+memdiag diagnose --pid 12345
+
+# 然后根据诊断结果选择对应的深入分析命令
+# 例如：诊断提示堆内存问题 → 用 histogram/diff 进一步分析
+# 例如：诊断提示线程问题 → 用 threads -s 查看堆栈
+```
+
+#### 命令使用示例
 
 ```bash
-# 示例 1: 诊断当前 JVM
+# 诊断当前 JVM
 memdiag diagnose
 
-# 示例 2: 诊断指定进程
+# 诊断指定进程
 memdiag diagnose --pid 12345
 memdiag diagnose 12345
 ```
@@ -545,31 +637,72 @@ memdiag native --regions --pid 12345
 memdiag native --diagnose --pid 12345
 ```
 
-#### 使用示例
+#### 使用场景示例
+
+**场景 1: 堆内存正常，但 RSS 持续增长（堆外泄漏嫌疑）**
+```bash
+# 先检查堆外内存分析是否可用
+memdiag native --status --pid 12345
+
+# 查看堆外内存摘要，看虚拟内存和物理内存使用情况
+memdiag native --summary --pid 12345
+
+# 查看详细的内存区域分布，定位哪个区域在增长
+memdiag native --regions --pid 12345 -l 50
+
+# 运行堆外泄漏诊断，获取具体建议
+memdiag native --diagnose --pid 12345
+```
+
+**场景 2: 需要持续监控，不想每次都 attach**
+```bash
+# 方式一：启动目标 JVM 时就加载 Agent（推荐生产环境）
+java -javaagent:memdiag-agent.jar=port=6789 -jar your-app.jar
+
+# 然后所有命令都通过 Agent 模式使用
+memdiag native --summary --agent=localhost:6789
+memdiag histogram --agent=localhost:6789
+memdiag threads --agent=localhost:6789
+```
+
+**场景 3: 问题已经发生，需要动态 attach Agent**
+```bash
+# 动态 attach 到运行中的 JVM
+memdiag native --attach --agent-jar /path/to/memdiag-agent.jar --pid 12345
+
+# 确认 Agent 已启动
+memdiag native --status --agent=localhost:6789
+
+# 使用 Agent 模式进行深入分析
+memdiag allocations --summary --agent=localhost:6789
+memdiag methods --agent=localhost:6789
+```
+
+#### 命令使用示例
 
 ```bash
 # === 基础分析 ===
 
-# 示例 1: 检查状态和可用模式
+# 检查状态和可用模式
 memdiag native --status
 
-# 示例 2: 显示内存摘要
+# 显示内存摘要
 memdiag native --summary
 memdiag native --summary --pid 12345
 
-# 示例 3: 显示内存区域
+# 显示内存区域
 memdiag native --regions
 memdiag native --regions 12345
 
-# 示例 4: 运行堆外诊断
+# 运行堆外诊断
 memdiag native --diagnose
 
 # === Agent 控制 ===
 
-# 示例 5: 动态 attach Agent
+# 动态 attach Agent
 memdiag native --attach --agent-jar /path/to/memdiag-agent.jar --pid 12345
 
-# 示例 6:  detach Agent
+# detach Agent
 memdiag native --detach --pid 12345
 ```
 
@@ -665,27 +798,89 @@ Agent 内部未来可选加载 JVMTI 原生库进行增强
 | `--id <id>` | 自定义快照 ID（保存时使用） | - |
 | `-l, --limit <n>` | 限制类显示行数 | 20 |
 
-#### 使用示例
+#### 使用场景示例
+
+**场景 1: 内存泄漏调查 - 建立时间序列对比**
+```bash
+# 应用刚启动时，保存初始基线
+memdiag snapshot --save --id=after-start --pid 12345
+
+# 运行 1 小时后，保存第二张快照
+memdiag snapshot --save --id=after-1h --pid 12345
+
+# 运行 6 小时后，保存第三张快照
+memdiag snapshot --save --id=after-6h --pid 12345
+
+# 对比初始和 6 小时后的状态，看哪些类持续增长
+memdiag diff --baseline=after-start --current=after-6h
+
+# 对比 1 小时和 6 小时，看增长是否加速
+memdiag diff --baseline=after-1h --current=after-6h
+```
+
+**场景 2: 问题复现 - 保存前后对比**
+```bash
+# 问题复现前，保存基准快照
+memdiag snapshot --save --id=before-repro --pid 12345
+
+# 执行复现步骤...
+# 例如：触发某个 API 调用、执行某个批处理任务
+
+# 问题复现后，立即保存当前快照
+memdiag snapshot --save --id=after-repro --pid 12345
+
+# 对比两个快照，找出内存变化
+memdiag diff --baseline=before-repro --current=after-repro
+```
+
+**场景 3: 发布验证 - 版本对比**
+```bash
+# 旧版本运行一段时间后保存快照
+memdiag snapshot --save --id=v1.0 --pid 12345
+
+# 升级到新版本，同样运行时间后保存快照
+memdiag snapshot --save --id=v2.0 --pid 12345
+
+# 对比两个版本的内存使用，看是否有回归
+memdiag diff --baseline=v1.0 --current=v2.0
+```
+
+**场景 4: 离线分析 - 保存现场后慢慢分析**
+```bash
+# 问题发生时，立即保存快照（避免目标 JVM 重启丢失数据）
+memdiag snapshot --save --id=incident-$(date +%Y%m%d-%H%M) --pid 12345
+
+# 列出所有快照，确认已保存
+memdiag snapshot --list
+
+# 可以安全地重启目标 JVM 了
+
+# 之后随时加载快照进行离线分析
+memdiag snapshot --load=incident-20260329-1030
+memdiag diff --baseline=earlier-snapshot --current=incident-20260329-1030
+```
+
+#### 命令使用示例
 
 ```bash
 # === 基本操作 ===
 
-# 示例 1: 保存快照（自动生成 ID）
+# 保存快照（自动生成 ID）
 memdiag snapshot --save --pid 12345
 
-# 示例 2: 保存快照并指定 ID
+# 保存快照并指定 ID
 memdiag snapshot --save --id=baseline --pid 12345
 
-# 示例 3: 列出所有快照
+# 列出所有快照
 memdiag snapshot --list
 
-# 示例 4: 加载快照（使用 ID）
+# 加载快照（使用 ID）
 memdiag snapshot --load=baseline --limit=50
 
-# 示例 5: 加载快照（使用完整文件名）
+# 加载快照（使用完整文件名）
 memdiag snapshot --load=snapshot-test1-20260326-164306.snapshot
 
-# 示例 6: 删除快照
+# 删除快照
 memdiag snapshot --delete=baseline
 
 # === 完整工作流 ===
@@ -777,21 +972,72 @@ To delete a snapshot:
 | `--growth-rate <n>` | 显示 Top N 增长率类 | 5 |
 | `--all` | 显示所有变化（不只是 Top N） | false |
 
-#### 使用示例
+#### 使用场景示例
+
+**场景 1: 内存泄漏调查 - 定位增长的类**
+```bash
+# 对比两个时间点的快照，看哪些类增长最多
+memdiag diff --baseline=morning --current=afternoon --growing=30
+
+# 重点关注增长率高的类（GROWTH 列）
+# 某个类持续高增长 → 泄漏嫌疑大
+```
+
+**场景 2: 怀疑某个操作导致内存泄漏**
+```bash
+# 操作前保存快照
+memdiag snapshot --save --id=before-op --pid 12345
+
+# 执行可疑操作（比如：批量导入数据、触发某个定时任务）
+
+# 操作后立即保存快照
+memdiag snapshot --save --id=after-op --pid 12345
+
+# 对比看哪些类因为这个操作增长了
+memdiag diff --baseline=before-op --current=after-op --all
+```
+
+**场景 3: 发布后内存监控 - 对比版本**
+```bash
+# 旧版本运行稳定后保存快照
+memdiag snapshot --save --id=v1-stable --pid 12345
+
+# 升级到新版本，同样负载运行相同时间
+memdiag snapshot --save --id=v2-stable --pid 12345
+
+# 对比看内存使用是否有明显增加
+memdiag diff --baseline=v1-stable --current=v2-stable
+
+# 如果新版本某些类异常增长 → 可能有回归
+```
+
+**场景 4: 持续监控 - 与基准快照实时对比**
+```bash
+# 建立一个健康的基准快照
+memdiag snapshot --save --id=healthy-baseline --pid 12345
+
+# 后续随时与基准对比，看是否偏离健康状态
+memdiag diff --baseline=healthy-baseline --pid 12345
+
+# 如果发现异常增长，再保存当前快照做进一步分析
+memdiag snapshot --save --id=current-abnormal --pid 12345
+```
+
+#### 命令使用示例
 
 ```bash
 # === 基本对比 ===
 
-# 示例 1: 对比两个已保存的快照
+# 对比两个已保存的快照
 memdiag diff --baseline=before --current=after
 
-# 示例 2: 对比基准快照与当前实时堆
+# 对比基准快照与当前实时堆
 memdiag diff --baseline=before --pid 12345
 
-# 示例 3: 自定义显示数量
+# 自定义显示数量
 memdiag diff --baseline=before --current=after --growing=20 --shrinking=10
 
-# 示例 4: 显示所有变化
+# 显示所有变化
 memdiag diff --baseline=before --current=after --all
 
 # === 完整泄漏检测工作流 ===
@@ -895,20 +1141,59 @@ CLASS NAME                                     OBJ DELTA      BYTE DELTA     GRO
 | `-o, --output <file>` | 输出文件路径（默认 stdout） | - |
 | `-l, --limit <n>` | 类显示限制 | 50 |
 
-#### 使用示例
+#### 使用场景示例
+
+**场景 1: 问题上报 - 生成完整报告分享给团队**
+```bash
+# 生成 HTML 格式的完整报告，方便在浏览器中查看
+memdiag report --format=html --output=mem-report-$(date +%Y%m%d-%H%M).html --pid 12345
+
+# 或者生成 JSON 格式，便于自动化分析
+memdiag report --format=json --output=mem-report-$(date +%Y%m%d-%H%M).json --pid 12345
+```
+
+**场景 2: 定期健康检查 - 保存历史报告**
+```bash
+# 每天生成一份报告，建立健康基线
+memdiag report --format=html --output=daily-report-$(date +%Y%m%d).html --pid 12345
+
+# 对比多天的报告，看趋势变化
+open daily-report-20260328.html
+open daily-report-20260329.html
+```
+
+**场景 3: 问题现场记录 - OOM 后立即保存**
+```bash
+# OOM 发生后，立即生成完整报告保存现场
+memdiag report --format=html --output=oom-report-$(date +%Y%m%d-%H%M).html --pid 12345
+
+# 同时保存快照，方便后续深入分析
+memdiag snapshot --save --id=oom-$(date +%Y%m%d-%H%M) --pid 12345
+```
+
+**场景 4: 快速查看 - 文本报告直接输出**
+```bash
+# 直接在终端查看文本报告，快速获取整体状况
+memdiag report --pid 12345
+
+# 或者输出到文件
+memdiag report --pid 12345 > report-$(date +%Y%m%d-%H%M).txt
+```
+
+#### 命令使用示例
 
 ```bash
-# 示例 1: 生成文本报告到 stdout
+# 生成文本报告到 stdout
 memdiag report --pid 12345
 memdiag report --format=text --pid 12345
 
-# 示例 2: 生成 HTML 报告到文件
+# 生成 HTML 报告到文件
 memdiag report --format=html --output=report.html --pid 12345
 
-# 示例 3: 生成 JSON 报告
+# 生成 JSON 报告
 memdiag report --format=json --output=report.json --pid 12345
 
-# 示例 4: 使用位置参数
+# 使用位置参数
 memdiag report 12345 --format=html --output=report.html
 ```
 
@@ -988,20 +1273,74 @@ memdiag nmt --pid 12345
 | `disable` | 禁用插桩功能（allocation/methods） |
 | `jvmti` | 查看 JVMTI 状态 |
 
-#### 使用示例
+#### 使用场景示例
+
+**场景 1: 刚 attach Agent，确认是否工作正常**
+```bash
+# 查看 Agent 状态，确认连接正常
+memdiag agent status --agent=localhost:6789
+
+# 查看 Agent 配置
+memdiag agent config --agent=localhost:6789
+
+# 查看 Agent 自身指标
+memdiag agent metrics --agent=localhost:6789
+```
+
+**场景 2: 需要深入监控，启用更详细的采集**
+```bash
+# 启用分配追踪（如果尚未启用）
+memdiag agent enable allocation --agent=localhost:6789
+
+# 启用方法监控
+memdiag agent enable methods --agent=localhost:6789
+
+# 确认已启用
+memdiag agent status --agent=localhost:6789
+```
+
+**场景 3: 生产环境问题调查期间**
+```bash
+# 问题发生时，先查看 Agent 收集的分配统计
+memdiag agent allocations --summary --agent=localhost:6789
+
+# 再查看方法监控，看哪些方法执行慢
+memdiag agent methods --stats --agent=localhost:6789
+
+# 如果 JVMTI 已加载，也可以查看 JVMTI 状态
+memdiag agent jvmti --agent=localhost:6789
+```
+
+#### 命令使用示例
 
 ```bash
 # 查看 Agent 状态
-memdiag agent status
+memdiag agent status --agent=localhost:6789
+
+# 查看 Agent 配置
+memdiag agent config --agent=localhost:6789
+
+# 查看 Agent 指标
+memdiag agent metrics --agent=localhost:6789
 
 # 查看分配统计
-memdiag agent allocations --summary
+memdiag agent allocations --summary --agent=localhost:6789
 
 # 查看方法统计
-memdiag agent methods --stats
+memdiag agent methods --stats --agent=localhost:6789
 
 # 启用分配追踪
-memdiag agent enable allocation
+memdiag agent enable allocation --agent=localhost:6789
+
+# 启用方法监控
+memdiag agent enable methods --agent=localhost:6789
+
+# 禁用功能
+memdiag agent disable allocation --agent=localhost:6789
+memdiag agent disable methods --agent=localhost:6789
+
+# 查看 JVMTI 状态
+memdiag agent jvmti --agent=localhost:6789
 ```
 
 ---
@@ -1026,14 +1365,53 @@ memdiag agent enable allocation
 | `-h, --help` | 显示帮助信息 | - |
 | `-l, --limit <n>` | 限制 Top 类型显示 | 10 |
 
-#### 使用示例
+#### 使用场景示例
+
+**场景 1: 内存使用持续增长，需要了解分配热点**
+```bash
+# 查看分配摘要，了解总体分配情况
+memdiag allocations --summary --agent=localhost:6789
+
+# 查看 Top 分配类型，看哪些类型分配最多
+memdiag allocations --agent=localhost:6789 -l 30
+
+# 重点关注 ByteBuffer、byte[] 等堆外相关类型
+```
+
+**场景 2: 怀疑 ByteBuffer 泄漏，监控分配趋势**
+```bash
+# 定期采样，记录分配速率
+memdiag allocations --summary --agent=localhost:6789 > alloc-$(date +%H%M).log
+sleep 300
+memdiag allocations --summary --agent=localhost:6789 > alloc-$(date +%H%M).log
+
+# 对比看分配速率是否异常
+diff alloc-*.log
+```
+
+**场景 3: 性能优化，识别高分配的类型**
+```bash
+# 查看 Top 20 分配类型，找出优化目标
+memdiag allocations --agent=localhost:6789 -l 20
+
+# 对于高分配类型，考虑：
+# - 对象池化
+# - 减少不必要的分配
+# - 使用更高效的数据结构
+```
+
+#### 命令使用示例
 
 ```bash
-# 连接 Agent 查看分配统计
+# 连接 Agent 查看分配统计（Top 10）
 memdiag allocations --agent localhost:6789
 
-# 指定限制数量
+# 查看分配摘要
+memdiag allocations --summary --agent localhost:6789
+
+# 指定限制数量（Top 20）
 memdiag allocations --agent localhost:6789 -l 20
+memdiag allocations --agent localhost:6789 --limit 30
 ```
 
 #### 输出说明
@@ -1077,10 +1455,55 @@ java.nio.HeapByteBuffer                          567,890,123       12,345
 | `-l, --limit <n>` | 限制方法列表 | 20 |
 | `-s, --sort <type>` | 排序方式: time, count | time |
 
-#### 使用示例
+#### 使用场景示例
+
+**场景 1: 应用响应慢，需要找出慢方法**
+```bash
+# 查看按总时间排序的 Top 20 方法，找出耗时最多的
+memdiag methods --agent localhost:6789 -l 20 -s time
+
+# 重点关注：
+# - TOTAL(ms) 列：总耗时
+# - AVG(ms) 列：平均耗时
+# - MAX(ms) 列：最大耗时（可能有偶发慢请求）
+```
+
+**场景 2: 高频调用方法，需要优化调用次数**
+```bash
+# 查看按调用次数排序的方法
+memdiag methods --agent localhost:6789 -s count -l 30
+
+# 对于调用次数异常高的方法：
+# - 考虑缓存结果
+# - 检查是否有重复调用
+# - 考虑批量处理
+```
+
+**场景 3: 性能回归分析，版本对比**
+```bash
+# 旧版本运行时，保存方法统计
+memdiag methods --agent localhost:6789 -l 50 > methods-v1.txt
+
+# 新版本运行时，同样负载下保存统计
+memdiag methods --agent localhost:6789 -l 50 > methods-v2.txt
+
+# 对比看哪些方法耗时增加了
+diff methods-v1.txt methods-v2.txt
+```
+
+**场景 4: 定位偶发超时，看最大耗时**
+```bash
+# 查看方法统计，重点关注 MAX(ms) 列
+memdiag methods --agent localhost:6789 -l 30
+
+# 如果某个方法 MAX(ms) 远大于 AVG(ms)，说明有偶发慢请求
+# 需要进一步查看该方法的代码，定位最坏情况
+```
+
+#### 命令使用示例
 
 ```bash
-# 连接 Agent 查看方法统计（按总时间排序）
+# 连接 Agent 查看方法统计（按总时间排序，Top 20）
 memdiag methods --agent localhost:6789
 
 # 按调用次数排序
@@ -1088,6 +1511,10 @@ memdiag methods --agent localhost:6789 -s count
 
 # 指定限制数量
 memdiag methods --agent localhost:6789 -l 30
+memdiag methods --agent localhost:6789 --limit 30
+
+# 组合使用
+memdiag methods --agent localhost:6789 -s count -l 50
 ```
 
 #### 输出说明
@@ -1171,9 +1598,11 @@ memdiag-cli (JDK)
 #### 3. JVMTI 的角色
 
 - JVMTI 是 JVM 提供的原生层工具接口
-- 当前版本：**框架已就绪，功能未启用**
-- 未来计划：Agent 模式可自动检测并加载 `libmemdiag-agent.so`（JVMTI 库）
-- **没有独立的 `libmemdiag.so`**：只有 `libmemdiag-agent.so`
+- 当前版本：**框架已就绪，Agent 模式支持自动加载**
+- 使用方式：
+  - **JMX 模式**：不使用 JVMTI，仅通过 `/proc` 文件系统进行只读分析
+  - **Agent 模式**：Java Agent 在**目标 JVM 内**尝试自动加载 JVMTI 库，支持优雅降级（如库不可用则仅使用 Java 层字节码插桩功能）
+- **注意 `native --attach` 挂载的是 Java Agent**：不是 JVMTI Agent，挂载后可使用 Agent 模式的所有功能
 
 ---
 
@@ -1184,10 +1613,10 @@ memdiag-cli (JDK)
 | HTTP API 服务（端口 6789） | ✅ |
 | 堆直方图、线程分析、诊断报告 | ✅ |
 | ProcFS 堆外内存分析 | ✅ |
-| 分配追踪 API 框架 | ✅ |
+| ByteBuffer 分配追踪（字节码插桩） | ✅ |
 | 方法监控 API 框架 | ✅ |
-| 实际字节码插桩 | ✅ 框架已就绪 |
-| JVMTI 原生事件监听 | ❌ 待实现 |
+| 分配统计（速率、Top N、趋势） | ✅ |
+| JVMTI 自动检测与优雅降级 | ✅ |
 
 ---
 
@@ -1613,14 +2042,17 @@ ls -lh /path/to/memdiag-cli-1.0.0-SNAPSHOT.jar
 | **线程分析** | `threads` | ✅ 低 - 只读 JMX | 任何时间 |
 | **自动诊断** | `diagnose` | ✅ 低 - 只读 JMX | 任何时间 |
 | **堆外基础分析** | `native --status/--summary/--regions` | ✅ 无 - 只读 /proc | 任何时间 |
-| **Agent 挂载** | `native --attach` | ⚠️ 中等 - 短暂 Safe Point 停顿 | 测试环境先验证 |
-| **Agent 卸载** | `native --detach` | ✅ 低 - 轻微影响 | 分析完成后 |
-| **分配追踪** | `native --start-trace` | 🔴 高 - 每次分配触发回调，增加 CPU | 仅必要时使用 |
+| **Java Agent 挂载** | `native --attach` | ⚠️ 中等 - 短暂 Safe Point 停顿 | 测试环境先验证 |
+| **Java Agent 卸载** | `native --detach` | ✅ 低 - 轻微影响 | 分析完成后 |
+| **JVMTI 分配追踪** | `native --start-trace` | 🔴 高 - 每次分配触发回调，增加 CPU | 仅必要时使用 |
 | | `native --stop-trace` | ✅ 低 - 释放缓冲区 | 追踪完成后 |
 | | `native --allocation-sites` | ✅ 无 - 只读已捕获数据 | 任何时间 |
 | **快照加载/对比** | `snapshot --load/list/delete`, `diff` | ✅ 无 - 本地文件操作 | 任何时间 |
 | **报告生成** | `report` | ✅ 低 - 只读 JMX | 任何时间 |
 | **NMT 分析** | `nmt` | ✅ 低 - 只读 JMX | 目标 JVM 已启用 NMT |
+| **Agent 状态管理** | `agent status/config/metrics` | ✅ 低 - HTTP API 只读 | Agent 模式下任何时间 |
+| **分配统计** | `allocations` | ✅ 低 - Agent 内存中统计，不中断目标 | Agent 模式下任何时间 |
+| **方法监控** | `methods` | ⚠️ 中等 - 字节码插桩有开销 | Agent 模式下非高峰时段 |
 
 ### 使用建议
 
@@ -1628,18 +2060,29 @@ ls -lh /path/to/memdiag-cli-1.0.0-SNAPSHOT.jar
    - 先用 `histogram`, `threads`, `diagnose`, `native --summary` 定位问题
    - 堆直方图分析已配置 500ms 超时，避免过长停顿
 
-2. **谨慎使用 JVMTI Agent**
-   - `--attach` 和 `--start-trace` 建议在测试环境先验证
-   - 分配追踪会增加 CPU 开销，仅在必要时启用
+2. **Agent 模式安全建议**
+   - Agent HTTP 服务默认绑定 `localhost`，不要暴露到公网
+   - 如需远程访问，建议使用 SSH 隧道或 VPN
+   - 生产环境使用前务必在测试环境验证
 
-3. **使用快照进行对比**
+3. **谨慎使用侵入性功能**
+   - `native --attach`、`methods` 建议在测试环境先验证
+   - JVMTI 分配追踪（`native --start-trace`）会增加 CPU 开销，仅在必要时启用
+   - 字节码插桩采样率可配置，避免 100% 拦截
+
+4. **使用快照进行对比**
    - 先用 `snapshot --save` 保存基准快照
    - 问题复现后再保存当前快照
    - 用 `diff` 离线对比，避免对生产环境持续影响
 
-4. **配置调优**
+5. **Agent 模式下的分配统计**
+   - `allocations` 命令使用 Agent 内存中的统计数据，对目标进程影响很小
+   - 可实时查看分配速率、Top N 分配类型，适合持续监控
+
+6. **配置调优**
    - 可通过 `memdiag.jmx.heap-histogram-timeout-ms` 调整超时时间
-   - 可通过 `memdiag.native.sampling-rate` 调整追踪采样率
+   - 可通过 `memdiag.native.sampling-rate` 调整 JVMTI 追踪采样率
+   - Agent 配置可通过 `agent config` 查看和调整
 
 ---
 
@@ -1778,6 +2221,20 @@ memdiag diff --baseline=test1 12345  # 对比快照与实时堆
 # === 报告生成 ===
 memdiag report 12345                 # 文本报告
 memdiag report --format=html --output=report.html 12345  # HTML 报告
+
+# === Agent 管理（需要 --agent）===
+memdiag agent status --agent=localhost:6789    # 查看 Agent 状态
+memdiag agent config --agent=localhost:6789    # 查看 Agent 配置
+memdiag agent metrics --agent=localhost:6789   # 查看 Agent 指标
+
+# === 分配统计（需要 --agent）===
+memdiag allocations --summary --agent=localhost:6789  # 分配摘要
+memdiag allocations --stats --agent=localhost:6789    # 分配统计
+memdiag allocations --top=20 --agent=localhost:6789   # Top 20 分配类型
+
+# === 方法监控（需要 --agent）===
+memdiag methods --limit=20 --agent=localhost:6789     # 方法统计（按时间）
+memdiag methods --sort=count --agent=localhost:6789    # 方法统计（按调用次数）
 ```
 
 ---

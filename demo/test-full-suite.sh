@@ -245,6 +245,18 @@ echo "----------------------------------------"
 test_contains "agent allocations --summary" "memdiag agent allocations --summary" "ALLOCATION ANALYSIS"
 test_contains "agent allocations --stats" "memdiag agent allocations --stats" "ALLOCATION ANALYSIS"
 
+# ========== Phase 3: 新增顶层命令测试 ==========
+echo ""
+echo "Phase 3: 新增顶层命令测试"
+echo "----------------------------------------"
+
+test_contains "allocations 命令帮助" "memdiag allocations -h" "allocations"
+test_contains "methods 命令帮助" "memdiag methods -h" "methods"
+
+# 测试 allocations 命令 (使用 agent 模式)
+test_contains "allocations --agent 选项" "memdiag allocations --agent=localhost:6789" "Allocation Summary" 2>/dev/null || true
+test_contains "methods --agent 选项" "memdiag methods --agent=localhost:6789" "Method Monitoring" 2>/dev/null || true
+
 # ========== Phase 4: JVMTI 集成测试 ==========
 echo ""
 echo "Phase 4: JVMTI 集成测试"
