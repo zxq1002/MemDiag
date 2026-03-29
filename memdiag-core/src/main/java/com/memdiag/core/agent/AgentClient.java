@@ -14,6 +14,7 @@ import com.google.gson.JsonSerializer;
 import com.memdiag.core.diagnose.DiagnosisResult;
 import com.memdiag.core.heap.HeapHistogram;
 import com.memdiag.core.thread.ThreadDump;
+import com.memdiag.core.thread.ThreadStats;
 
 import java.io.BufferedReader;
 import java.io.IOException;
@@ -24,6 +25,8 @@ import java.net.HttpURLConnection;
 import java.net.URI;
 import java.net.URL;
 import java.time.Instant;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.Map;
 
 /**
@@ -455,10 +458,39 @@ public class AgentClient {
             return null;
         }
         try {
+            // Try parsing as wrapped format first {success: true, data: {...}}
+            JsonObject json = JsonParser.parseString(raw).getAsJsonObject();
+            if (json.has("success") && json.has("data")) {
+                JsonElement data = json.get("data");
+                return parseHeapHistogramFromMap(data);
+            }
+            // Fall back to direct format
             return gson.fromJson(raw, HeapHistogram.class);
         } catch (Exception e) {
             return null;
         }
+    }
+
+    /**
+     * Parse HeapHistogram from a JSON object that represents a map.
+     */
+    private HeapHistogram parseHeapHistogramFromMap(JsonElement data) {
+        HeapHistogram histogram = new HeapHistogram();
+        if (data.isJsonObject()) {
+            JsonObject obj = data.getAsJsonObject();
+            if (obj.has("classStats") && obj.get("classStats").isJsonArray()) {
+                for (JsonElement elem : obj.get("classStats").getAsJsonArray()) {
+                    if (elem.isJsonObject()) {
+                        JsonObject statObj = elem.getAsJsonObject();
+                        String className = statObj.has("className") ? statObj.get("className").getAsString() : null;
+                        long objectCount = statObj.has("objectCount") ? statObj.get("objectCount").getAsLong() : 0;
+                        long shallowBytes = statObj.has("shallowBytes") ? statObj.get("shallowBytes").getAsLong() : 0;
+                        histogram.add(new com.memdiag.core.heap.ClassStats(className, objectCount, shallowBytes));
+                    }
+                }
+            }
+        }
+        return histogram;
     }
 
     /**
@@ -482,10 +514,67 @@ public class AgentClient {
             return null;
         }
         try {
+            // Try parsing as wrapped format first {success: true, data: {...}}
+            JsonObject json = JsonParser.parseString(raw).getAsJsonObject();
+            if (json.has("success") && json.has("data")) {
+                JsonElement data = json.get("data");
+                return parseThreadDumpFromMap(data);
+            }
+            // Fall back to direct format
             return gson.fromJson(raw, ThreadDump.class);
         } catch (Exception e) {
             return null;
         }
+    }
+
+    /**
+     * Parse ThreadDump from a JSON object that represents a map.
+     */
+    private ThreadDump parseThreadDumpFromMap(JsonElement data) {
+        ThreadDump dump = new ThreadDump();
+        if (data.isJsonObject()) {
+            JsonObject obj = data.getAsJsonObject();
+            if (obj.has("timestamp")) {
+                dump.setTimestamp(Instant.parse(obj.get("timestamp").getAsString()));
+            }
+            if (obj.has("threadStats") && obj.get("threadStats").isJsonArray()) {
+                for (JsonElement elem : obj.get("threadStats").getAsJsonArray()) {
+                    if (elem.isJsonObject()) {
+                        JsonObject statObj = elem.getAsJsonObject();
+                        ThreadStats stats = new ThreadStats();
+                        if (statObj.has("threadId")) stats.setThreadId(statObj.get("threadId").getAsLong());
+                        if (statObj.has("threadName")) stats.setThreadName(statObj.get("threadName").getAsString());
+                        if (statObj.has("state")) {
+                            try {
+                                stats.setState(com.memdiag.core.thread.ThreadState.valueOf(statObj.get("state").getAsString()));
+                            } catch (Exception e) {}
+                        }
+                        if (statObj.has("blockedCount")) stats.setBlockedCount(statObj.get("blockedCount").getAsLong());
+                        if (statObj.has("blockedTime")) stats.setBlockedTime(statObj.get("blockedTime").getAsLong());
+                        if (statObj.has("waitedCount")) stats.setWaitedCount(statObj.get("waitedCount").getAsLong());
+                        if (statObj.has("waitedTime")) stats.setWaitedTime(statObj.get("waitedTime").getAsLong());
+                        if (statObj.has("stackTrace") && statObj.get("stackTrace").isJsonArray()) {
+                            List<com.memdiag.core.thread.StackFrame> frames = new ArrayList<>();
+                            for (JsonElement frameElem : statObj.get("stackTrace").getAsJsonArray()) {
+                                if (frameElem.isJsonObject()) {
+                                    JsonObject frameObj = frameElem.getAsJsonObject();
+                                    com.memdiag.core.thread.StackFrame frame = new com.memdiag.core.thread.StackFrame();
+                                    if (frameObj.has("className")) frame.setClassName(frameObj.get("className").getAsString());
+                                    if (frameObj.has("methodName")) frame.setMethodName(frameObj.get("methodName").getAsString());
+                                    if (frameObj.has("fileName")) frame.setFileName(frameObj.get("fileName").getAsString());
+                                    if (frameObj.has("lineNumber")) frame.setLineNumber(frameObj.get("lineNumber").getAsInt());
+                                    if (frameObj.has("nativeMethod")) frame.setNativeMethod(frameObj.get("nativeMethod").getAsBoolean());
+                                    frames.add(frame);
+                                }
+                            }
+                            stats.setStackTrace(frames);
+                        }
+                        dump.addThreadStats(stats);
+                    }
+                }
+            }
+        }
+        return dump;
     }
 
     /**
@@ -499,10 +588,80 @@ public class AgentClient {
             return null;
         }
         try {
+            // Try parsing as wrapped format first {success: true, data: {...}}
+            JsonObject json = JsonParser.parseString(raw).getAsJsonObject();
+            if (json.has("success") && json.has("data")) {
+                JsonElement data = json.get("data");
+                return parseDiagnosisFromMap(data);
+            }
+            // Fall back to direct format
             return gson.fromJson(raw, DiagnosisResult.class);
         } catch (Exception e) {
             return null;
         }
+    }
+
+    /**
+     * Parse DiagnosisResult from a JSON object that represents a map.
+     */
+    private DiagnosisResult parseDiagnosisFromMap(JsonElement data) {
+        DiagnosisResult.Builder builder = DiagnosisResult.builder();
+        if (data.isJsonObject()) {
+            JsonObject obj = data.getAsJsonObject();
+            if (obj.has("timestamp")) {
+                builder.timestamp(Instant.parse(obj.get("timestamp").getAsString()));
+            }
+            if (obj.has("totalHeapUsed")) {
+                builder.totalHeapUsed(obj.get("totalHeapUsed").getAsLong());
+            }
+            if (obj.has("totalHeapCommitted")) {
+                builder.totalHeapCommitted(obj.get("totalHeapCommitted").getAsLong());
+            }
+            if (obj.has("threadCount")) {
+                builder.threadCount(obj.get("threadCount").getAsInt());
+            }
+            if (obj.has("summary")) {
+                builder.summary(obj.get("summary").getAsString());
+            }
+            if (obj.has("issues") && obj.get("issues").isJsonArray()) {
+                for (JsonElement issueElem : obj.get("issues").getAsJsonArray()) {
+                    if (issueElem.isJsonObject()) {
+                        JsonObject issueObj = issueElem.getAsJsonObject();
+                        com.memdiag.core.diagnose.Issue.Builder issueBuilder = com.memdiag.core.diagnose.Issue.builder();
+                        if (issueObj.has("severity")) {
+                            try {
+                                issueBuilder.severity(com.memdiag.core.diagnose.Severity.valueOf(issueObj.get("severity").getAsString()));
+                            } catch (Exception e) {}
+                        }
+                        if (issueObj.has("type")) issueBuilder.type(issueObj.get("type").getAsString());
+                        if (issueObj.has("title")) issueBuilder.title(issueObj.get("title").getAsString());
+                        if (issueObj.has("description")) issueBuilder.description(issueObj.get("description").getAsString());
+                        if (issueObj.has("affectedClassName")) issueBuilder.affectedClassName(issueObj.get("affectedClassName").getAsString());
+                        if (issueObj.has("affectedObjectCount") && !issueObj.get("affectedObjectCount").isJsonNull()) {
+                            issueBuilder.affectedObjectCount(issueObj.get("affectedObjectCount").getAsLong());
+                        }
+                        if (issueObj.has("affectedBytes") && !issueObj.get("affectedBytes").isJsonNull()) {
+                            issueBuilder.affectedBytes(issueObj.get("affectedBytes").getAsLong());
+                        }
+                        if (issueObj.has("recommendations") && issueObj.get("recommendations").isJsonArray()) {
+                            for (JsonElement recElem : issueObj.get("recommendations").getAsJsonArray()) {
+                                if (recElem.isJsonObject()) {
+                                    JsonObject recObj = recElem.getAsJsonObject();
+                                    com.memdiag.core.diagnose.Recommendation.Builder recBuilder = com.memdiag.core.diagnose.Recommendation.builder();
+                                    if (recObj.has("priority")) recBuilder.priority(recObj.get("priority").getAsString());
+                                    if (recObj.has("title")) recBuilder.title(recObj.get("title").getAsString());
+                                    if (recObj.has("description")) recBuilder.description(recObj.get("description").getAsString());
+                                    if (recObj.has("action")) recBuilder.action(recObj.get("action").getAsString());
+                                    issueBuilder.addRecommendation(recBuilder.build());
+                                }
+                            }
+                        }
+                        builder.addIssue(issueBuilder.build());
+                    }
+                }
+            }
+        }
+        return builder.build();
     }
 
 }

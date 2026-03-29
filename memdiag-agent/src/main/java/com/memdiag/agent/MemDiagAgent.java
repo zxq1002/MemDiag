@@ -53,6 +53,9 @@ public class MemDiagAgent {
         AgentContext context = AgentContext.initialize(inst, config);
         context.setState(AgentContext.AgentState.INITIALIZING);
 
+        // Initialize components BEFORE starting server
+        initializeOptionalComponents(config, context);
+
         if (startServer(config, context, inst)) {
             context.setState(AgentContext.AgentState.RUNNING);
             System.out.printf("[MemDiag] HTTP server started on %s:%d%n",
@@ -64,7 +67,6 @@ public class MemDiagAgent {
         }
 
         addShutdownHook(context);
-        initializeOptionalComponents(config, context);
 
         // Print final status summary
         printStartupSummary(context, config);

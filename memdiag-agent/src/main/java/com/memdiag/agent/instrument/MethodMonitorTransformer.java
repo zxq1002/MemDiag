@@ -136,8 +136,15 @@ public class MethodMonitorTransformer implements ClassFileTransformer {
 
         try {
             ClassReader cr = new ClassReader(classfileBuffer);
+            // Get class version to use appropriate ASM API
+            int classVersion = 0;
+            if (classfileBuffer.length > 7) {
+                classVersion = ((classfileBuffer[6] & 0xFF) << 8) | (classfileBuffer[7] & 0xFF);
+            }
+            final int apiVersion = AsmUtils.getAsmApiVersion(classVersion);
+            
             ClassWriter cw = new ClassWriter(cr, ClassWriter.COMPUTE_FRAMES);
-            cr.accept(new ClassVisitor(AsmUtils.getAsmApiVersion(Opcodes.V1_8), cw) {
+            cr.accept(new ClassVisitor(apiVersion, cw) {
                 @Override
                 public MethodVisitor visitMethod(int access, String name, String desc, String sig, String[] exc) {
                     MethodVisitor mv = super.visitMethod(access, name, desc, sig, exc);
@@ -145,7 +152,7 @@ public class MethodMonitorTransformer implements ClassFileTransformer {
                     final String finalMethodName = name;
                     final String finalDesc = desc;
 
-                    return new AdviceAdapter(AsmUtils.getAsmApiVersion(Opcodes.V1_8), mv, access, name, desc) {
+                    return new AdviceAdapter(apiVersion, mv, access, name, desc) {
                         private int startTimeId;
 
                         @Override

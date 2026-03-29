@@ -57,9 +57,9 @@ public class AsmUtils {
         } else if (classVersion >= Opcodes.V17) {
             return Opcodes.ASM9;
         } else if (classVersion >= Opcodes.V11) {
-            return Opcodes.ASM7;
+            return Opcodes.ASM9;
         } else if (classVersion >= Opcodes.V9) {
-            return Opcodes.ASM6;
+            return Opcodes.ASM7;
         } else if (classVersion >= Opcodes.V1_8) {
             return Opcodes.ASM5;
         } else {

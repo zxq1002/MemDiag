@@ -98,9 +98,24 @@ public class AgentJVMTILoader {
     }
 
     private void initializeJVMTI() {
-        System.out.println("[MemDiag] JVMTI initialized");
-        // Register JVMTI event callbacks via JNI
-        JVMTIEventBridge.registerCallbacks();
+        try {
+            System.out.println("[MemDiag] JVMTI library loaded, initializing callbacks...");
+            // Register JVMTI event callbacks via JNI
+            JVMTIEventBridge.registerCallbacks();
+            System.out.println("[MemDiag] JVMTI callbacks registered successfully");
+        } catch (UnsatisfiedLinkError e) {
+            loadError = "JVMTI JNI methods not available (JNI method mismatch): " + e.getMessage();
+            available = false;
+            System.out.println("[MemDiag] " + loadError);
+            System.out.println("[MemDiag] JVMTI features will not be available, but bytecode instrumentation is still active");
+            System.out.println("[MemDiag] Basic functionality (heap, threads, allocations via bytecode instrumentation) works normally");
+        } catch (Throwable t) {
+            loadError = "Error initializing JVMTI: " + t.getMessage();
+            available = false;
+            System.out.println("[MemDiag] " + loadError);
+            System.out.println("[MemDiag] JVMTI features disabled, but basic functionality still works");
+            t.printStackTrace();
+        }
     }
 
     /**

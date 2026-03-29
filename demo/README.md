@@ -135,20 +135,23 @@ bash demo/start-test-suite.sh
 | P1 | native | --status, --summary, --regions | ✅ |
 | P1 | report | --format, --output | ✅ |
 
-### 4.3 JVMTI 加载场景测试
+### 4.3 完整测试套件
 
-提供专门的 JVMTI 测试套件，验证原生库加载成功后的增强功能：
+提供完整的测试套件，包含所有功能验证：
 
 ```bash
-# 运行 JVMTI 加载场景测试
-bash demo/test-jvmtitest.sh
+# 运行完整测试套件
+bash demo/test-full-suite.sh
 ```
 
 这个测试会：
-1. 编译 JVMTI 原生库 (`libmemdiag-agent.so`)
-2. 将原生库打包到 agent jar 中
-3. 验证 JVMTI 状态显示为可用
-4. 验证所有基本功能在 JVMTI 环境下正常工作
+1. 验证所有基础命令 (histogram, threads, diagnose, snapshot, diff, report)
+2. 验证 native 命令 (ProcFS 模式)
+3. 验证多架构原生库支持
+4. 验证 Agent 功能 (--agent 模式)
+5. 验证动态 attach/detach
+6. 验证 JVMTI 集成和优雅降级
+7. 验证分配追踪和方法监控
 
 **注意**：由于 JNI 加载限制，JVMTI 可能无法在某些 Docker 环境中完全加载，但测试会验证优雅降级行为。
 
@@ -201,10 +204,8 @@ docker exec -it memdiag-test-container bash
 | 文件 | 说明 |
 |------|------|
 | `docs/TEST_PLAN.md` | 完整测试计划文档 |
-| `demo/test-full-suite.sh` | 容器内测试执行脚本 |
+| `demo/test-full-suite.sh` | 容器内完整测试执行脚本（包含所有测试） |
 | `demo/start-test-suite.sh` | 测试套件启动脚本 |
 | `demo/Dockerfile.test` | 测试环境 Dockerfile |
-| `demo/test-jvmtitest.sh` | JVMTI 加载场景测试脚本 |
-| `demo/Dockerfile.jvmtitest` | JVMTI 测试环境 Dockerfile |
 | `demo/build-native.sh` | 原生库构建脚本 |
 | `demo/Dockerfile.native-build` | 原生库构建环境 Dockerfile |

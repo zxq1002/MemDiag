@@ -105,8 +105,14 @@ public class AllocationTransformer implements ClassFileTransformer {
 
         try {
             ClassReader cr = new ClassReader(classfileBuffer);
+            // Get class version to use appropriate ASM API
+            int classVersion = 0;
+            if (classfileBuffer.length > 7) {
+                classVersion = ((classfileBuffer[6] & 0xFF) << 8) | (classfileBuffer[7] & 0xFF);
+            }
+            
             ClassWriter cw = new ClassWriter(cr, AsmUtils.getClassWriterFlags(cr));
-            AllocationClassVisitor cv = new AllocationClassVisitor(cw, className);
+            AllocationClassVisitor cv = new AllocationClassVisitor(cw, className, classVersion);
             cr.accept(cv, ClassReader.EXPAND_FRAMES);
             return cw.toByteArray();
         } catch (Exception e) {
@@ -117,21 +123,24 @@ public class AllocationTransformer implements ClassFileTransformer {
 
     private class AllocationClassVisitor extends ClassVisitor {
         private final String className;
-        public AllocationClassVisitor(ClassVisitor cv, String className) {
-            super(AsmUtils.getAsmApiVersion(Opcodes.V1_8), cv);
+        private final int apiVersion;
+
+        public AllocationClassVisitor(ClassVisitor cv, String className, int classVersion) {
+            super(AsmUtils.getAsmApiVersion(classVersion), cv);
             this.className = className;
+            this.apiVersion = AsmUtils.getAsmApiVersion(classVersion);
         }
 
         @Override
         public MethodVisitor visitMethod(int access, String name, String descriptor, String signature, String[] exceptions) {
             MethodVisitor mv = super.visitMethod(access, name, descriptor, signature, exceptions);
-            return new AllocationMethodVisitor(mv);
+            return new AllocationMethodVisitor(apiVersion, mv);
         }
     }
 
     private class AllocationMethodVisitor extends MethodVisitor {
-        public AllocationMethodVisitor(MethodVisitor mv) {
-            super(AsmUtils.getAsmApiVersion(Opcodes.V1_8), mv);
+        public AllocationMethodVisitor(int api, MethodVisitor mv) {
+            super(api, mv);
         }
 
         @Override

@@ -1,14 +1,5 @@
 package com.memdiag.agent;
 
-import com.google.gson.Gson;
-import com.google.gson.GsonBuilder;
-import com.google.gson.JsonDeserializationContext;
-import com.google.gson.JsonDeserializer;
-import com.google.gson.JsonElement;
-import com.google.gson.JsonParseException;
-import com.google.gson.JsonPrimitive;
-import com.google.gson.JsonSerializationContext;
-import com.google.gson.JsonSerializer;
 import com.memdiag.agent.collect.AllocationEvent;
 import com.memdiag.agent.collect.DataCollector;
 import com.memdiag.agent.collect.StatsAggregator;
@@ -42,7 +33,6 @@ import java.lang.instrument.Instrumentation;
 import java.lang.management.ManagementFactory;
 import java.lang.management.ThreadMXBean;
 import java.net.InetSocketAddress;
-import java.lang.reflect.Type;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.HashMap;
@@ -51,30 +41,16 @@ import java.util.Map;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 
+/**
+ * Agent HTTP server - uses simple JSON generation to avoid Gson conflicts.
+ */
 public class AgentServer {
-
-    /**
-     * TypeAdapter for java.time.Instant to work with Gson.
-     */
-    private static class InstantTypeAdapter implements JsonSerializer<Instant>, JsonDeserializer<Instant> {
-        @Override
-        public JsonElement serialize(Instant src, Type typeOfSrc, JsonSerializationContext context) {
-            return new JsonPrimitive(src.toString());
-        }
-
-        @Override
-        public Instant deserialize(JsonElement json, Type typeOfT, JsonDeserializationContext context)
-                throws JsonParseException {
-            return Instant.parse(json.getAsString());
-        }
-    }
 
     private final String host;
     private final int port;
     private final Instrumentation instrumentation;
     private final NativeMemoryAnalyzer nativeAnalyzer;
     private final ThreadMXBean threadMXBean;
-    private final Gson gson;
 
     private HttpServer server;
     private ExecutorService executor;
@@ -86,10 +62,6 @@ public class AgentServer {
         this.instrumentation = instrumentation;
         this.nativeAnalyzer = NativeMemoryAnalyzerFactory.getInstance();
         this.threadMXBean = ManagementFactory.getThreadMXBean();
-        this.gson = new GsonBuilder()
-                .setPrettyPrinting()
-                .registerTypeAdapter(Instant.class, new InstantTypeAdapter())
-                .create();
 
         if (threadMXBean.isThreadCpuTimeSupported()) {
             threadMXBean.setThreadCpuTimeEnabled(true);
@@ -176,8 +148,86 @@ public class AgentServer {
         return running;
     }
 
-    private void sendJsonResponse(HttpExchange exchange, Object response, int statusCode) throws IOException {
-        String json = gson.toJson(response);
+    // ========== Simple JSON utilities ==========
+
+    private String escapeJson(String s) {
+        if (s == null) return "null";
+        StringBuilder sb = new StringBuilder();
+        sb.append('\"');
+        for (char c : s.toCharArray()) {
+            switch (c) {
+                case '\"': sb.append("\\\""); break;
+                case '\\': sb.append("\\\\"); break;
+                case '\b': sb.append("\\b"); break;
+                case '\f': sb.append("\\f"); break;
+                case '\n': sb.append("\\n"); break;
+                case '\r': sb.append("\\r"); break;
+                case '\t': sb.append("\\t"); break;
+                default:
+                    if (c <= 0x1F) {
+                        sb.append(String.format("\\u%04x", (int) c));
+                    } else {
+                        sb.append(c);
+                    }
+            }
+        }
+        sb.append('\"');
+        return sb.toString();
+    }
+
+    private String toJson(Object obj) {
+        if (obj == null) return "null";
+        if (obj instanceof String) return escapeJson((String) obj);
+        if (obj instanceof Number) return obj.toString();
+        if (obj instanceof Boolean) return obj.toString();
+        if (obj instanceof Instant) return escapeJson(obj.toString());
+        if (obj instanceof Map) {
+            StringBuilder sb = new StringBuilder();
+            sb.append('{');
+            boolean first = true;
+            for (Map.Entry<?, ?> entry : ((Map<?, ?>) obj).entrySet()) {
+                if (!first) sb.append(',');
+                first = false;
+                sb.append(escapeJson(String.valueOf(entry.getKey())));
+                sb.append(':');
+                sb.append(toJson(entry.getValue()));
+            }
+            sb.append('}');
+            return sb.toString();
+        }
+        if (obj instanceof List) {
+            StringBuilder sb = new StringBuilder();
+            sb.append('[');
+            boolean first = true;
+            for (Object item : (List<?>) obj) {
+                if (!first) sb.append(',');
+                first = false;
+                sb.append(toJson(item));
+            }
+            sb.append(']');
+            return sb.toString();
+        }
+        // Default to string representation
+        return escapeJson(String.valueOf(obj));
+    }
+
+    private String successResponse(Object data) {
+        Map<String, Object> response = new HashMap<>();
+        response.put("success", true);
+        response.put("data", data);
+        response.put("timestamp", System.currentTimeMillis());
+        return toJson(response);
+    }
+
+    private String errorResponse(String error) {
+        Map<String, Object> response = new HashMap<>();
+        response.put("success", false);
+        response.put("error", error);
+        response.put("timestamp", System.currentTimeMillis());
+        return toJson(response);
+    }
+
+    private void sendJson(HttpExchange exchange, String json, int statusCode) throws IOException {
         byte[] bytes = json.getBytes("UTF-8");
         exchange.getResponseHeaders().set("Content-Type", "application/json; charset=utf-8");
         exchange.sendResponseHeaders(statusCode, bytes.length);
@@ -186,11 +236,15 @@ public class AgentServer {
         }
     }
 
-    private void sendErrorResponse(HttpExchange exchange, String error, int statusCode) throws IOException {
-        Map<String, String> response = new HashMap<>();
-        response.put("error", error);
-        sendJsonResponse(exchange, response, statusCode);
+    private void sendSuccess(HttpExchange exchange, Object data) throws IOException {
+        sendJson(exchange, successResponse(data), 200);
     }
+
+    private void sendError(HttpExchange exchange, String error, int statusCode) throws IOException {
+        sendJson(exchange, errorResponse(error), statusCode);
+    }
+
+    // ========== Handlers ==========
 
     private class SimpleHandler implements HttpHandler {
         private final String type;
@@ -202,10 +256,8 @@ public class AgentServer {
         @Override
         public void handle(HttpExchange exchange) throws IOException {
             Map<String, Object> response = new HashMap<>();
-            response.put("success", true);
             response.put("message", type + " endpoint placeholder");
-            response.put("timestamp", System.currentTimeMillis());
-            sendJsonResponse(exchange, response, 200);
+            sendSuccess(exchange, response);
         }
     }
 
@@ -213,15 +265,14 @@ public class AgentServer {
         @Override
         public void handle(HttpExchange exchange) throws IOException {
             if (!"POST".equals(exchange.getRequestMethod())) {
-                sendErrorResponse(exchange, "Method not allowed", 405);
+                sendError(exchange, "Method not allowed", 405);
                 return;
             }
 
             try {
                 Map<String, Object> response = new HashMap<>();
-                response.put("success", true);
                 response.put("message", "Detach request received");
-                sendJsonResponse(exchange, response, 200);
+                sendSuccess(exchange, response);
 
                 new Thread(() -> {
                     try {
@@ -231,7 +282,7 @@ public class AgentServer {
                     }
                 }).start();
             } catch (Exception e) {
-                sendErrorResponse(exchange, e.getMessage(), 500);
+                sendError(exchange, e.getMessage(), 500);
             }
         }
     }
@@ -245,13 +296,9 @@ public class AgentServer {
                 status.put("platform", nativeAnalyzer.getPlatform());
                 status.put("requiresAgent", nativeAnalyzer.requiresAgent());
                 status.put("agentAttached", nativeAnalyzer.isAgentAttached());
-
-                Map<String, Object> response = new HashMap<>();
-                response.put("success", true);
-                response.put("data", status);
-                sendJsonResponse(exchange, response, 200);
+                sendSuccess(exchange, status);
             } catch (Exception e) {
-                sendErrorResponse(exchange, e.getMessage(), 500);
+                sendError(exchange, e.getMessage(), 500);
             }
         }
     }
@@ -269,13 +316,9 @@ public class AgentServer {
                 data.put("threadStackSize", summary.getThreadStackSize());
                 data.put("codeCacheSize", summary.getCodeCacheSize());
                 data.put("breakdownByCategory", summary.getBreakdownByCategory());
-
-                Map<String, Object> response = new HashMap<>();
-                response.put("success", true);
-                response.put("data", data);
-                sendJsonResponse(exchange, response, 200);
+                sendSuccess(exchange, data);
             } catch (Exception e) {
-                sendErrorResponse(exchange, e.getMessage(), 500);
+                sendError(exchange, e.getMessage(), 500);
             }
         }
     }
@@ -297,13 +340,9 @@ public class AgentServer {
                     r.put("regionType", region.getRegionType());
                     regionData.add(r);
                 }
-
-                Map<String, Object> response = new HashMap<>();
-                response.put("success", true);
-                response.put("data", regionData);
-                sendJsonResponse(exchange, response, 200);
+                sendSuccess(exchange, regionData);
             } catch (Exception e) {
-                sendErrorResponse(exchange, e.getMessage(), 500);
+                sendError(exchange, e.getMessage(), 500);
             }
         }
     }
@@ -317,13 +356,9 @@ public class AgentServer {
                 data.put("findings", diagnosis.getFindings());
                 data.put("warnings", diagnosis.getWarnings());
                 data.put("recommendations", diagnosis.getRecommendations());
-
-                Map<String, Object> response = new HashMap<>();
-                response.put("success", true);
-                response.put("data", data);
-                sendJsonResponse(exchange, response, 200);
+                sendSuccess(exchange, data);
             } catch (Exception e) {
-                sendErrorResponse(exchange, e.getMessage(), 500);
+                sendError(exchange, e.getMessage(), 500);
             }
         }
     }
@@ -352,13 +387,9 @@ public class AgentServer {
                     status.put("message", "Agent context not initialized");
                 }
 
-                Map<String, Object> response = new HashMap<>();
-                response.put("success", true);
-                response.put("data", status);
-                response.put("timestamp", System.currentTimeMillis());
-                sendJsonResponse(exchange, response, 200);
+                sendSuccess(exchange, status);
             } catch (Exception e) {
-                sendErrorResponse(exchange, e.getMessage(), 500);
+                sendError(exchange, e.getMessage(), 500);
             }
         }
     }
@@ -371,30 +402,23 @@ public class AgentServer {
 
                 if ("GET".equals(method)) {
                     // Get current configuration
-                    Map<String, Object> response = new HashMap<>();
-                    response.put("success", true);
-
+                    Map<String, Object> config;
                     if (AgentContext.isInitialized()) {
-                        AgentConfig config = AgentContext.getInstance().getConfig();
-                        response.put("data", config.toMap());
+                        config = AgentContext.getInstance().getConfig().toMap();
                     } else {
-                        response.put("data", AgentConfig.defaults().toMap());
+                        config = AgentConfig.defaults().toMap();
                     }
-
-                    response.put("timestamp", System.currentTimeMillis());
-                    sendJsonResponse(exchange, response, 200);
+                    sendSuccess(exchange, config);
                 } else if ("PUT".equals(method)) {
                     // Update configuration (placeholder - requires restart for most changes)
                     Map<String, Object> response = new HashMap<>();
-                    response.put("success", true);
                     response.put("message", "Configuration update requires agent restart");
-                    response.put("timestamp", System.currentTimeMillis());
-                    sendJsonResponse(exchange, response, 200);
+                    sendSuccess(exchange, response);
                 } else {
-                    sendErrorResponse(exchange, "Method not allowed", 405);
+                    sendError(exchange, "Method not allowed", 405);
                 }
             } catch (Exception e) {
-                sendErrorResponse(exchange, e.getMessage(), 500);
+                sendError(exchange, e.getMessage(), 500);
             }
         }
     }
@@ -419,13 +443,9 @@ public class AgentServer {
                     metrics.put("agent.state", ctx.getState().name());
                 }
 
-                Map<String, Object> response = new HashMap<>();
-                response.put("success", true);
-                response.put("data", metrics);
-                response.put("timestamp", System.currentTimeMillis());
-                sendJsonResponse(exchange, response, 200);
+                sendSuccess(exchange, metrics);
             } catch (Exception e) {
-                sendErrorResponse(exchange, e.getMessage(), 500);
+                sendError(exchange, e.getMessage(), 500);
             }
         }
     }
@@ -471,21 +491,14 @@ public class AgentServer {
         public void handle(HttpExchange exchange) throws IOException {
             try {
                 DataCollector collector = getDataCollector();
-                Map<String, Object> response = new HashMap<>();
-
                 if (collector != null) {
                     int limit = getIntParam(exchange, "limit", 100);
-                    response.put("success", true);
-                    response.put("data", collector.getRecentEvents(limit));
+                    sendSuccess(exchange, collector.getRecentEvents(limit));
                 } else {
-                    response.put("success", false);
-                    response.put("error", "Data collector not available");
+                    sendError(exchange, "Data collector not available", 500);
                 }
-
-                response.put("timestamp", System.currentTimeMillis());
-                sendJsonResponse(exchange, response, 200);
             } catch (Exception e) {
-                sendErrorResponse(exchange, e.getMessage(), 500);
+                sendError(exchange, e.getMessage(), 500);
             }
         }
     }
@@ -495,20 +508,13 @@ public class AgentServer {
         public void handle(HttpExchange exchange) throws IOException {
             try {
                 DataCollector collector = getDataCollector();
-                Map<String, Object> response = new HashMap<>();
-
                 if (collector != null) {
-                    response.put("success", true);
-                    response.put("data", collector.toMap());
+                    sendSuccess(exchange, collector.toMap());
                 } else {
-                    response.put("success", false);
-                    response.put("error", "Data collector not available");
+                    sendError(exchange, "Data collector not available", 500);
                 }
-
-                response.put("timestamp", System.currentTimeMillis());
-                sendJsonResponse(exchange, response, 200);
             } catch (Exception e) {
-                sendErrorResponse(exchange, e.getMessage(), 500);
+                sendError(exchange, e.getMessage(), 500);
             }
         }
     }
@@ -518,28 +524,21 @@ public class AgentServer {
         public void handle(HttpExchange exchange) throws IOException {
             try {
                 DataCollector collector = getDataCollector();
-                Map<String, Object> response = new HashMap<>();
-
                 if (collector != null) {
                     int limit = getIntParam(exchange, "limit", 10);
                     String type = exchange.getRequestURI().getQuery() != null &&
                             exchange.getRequestURI().getQuery().contains("type=count") ? "count" : "size";
 
-                    response.put("success", true);
                     if ("count".equals(type)) {
-                        response.put("data", collector.getTopTypesByCount(limit));
+                        sendSuccess(exchange, collector.getTopTypesByCount(limit));
                     } else {
-                        response.put("data", collector.getTopTypesBySize(limit));
+                        sendSuccess(exchange, collector.getTopTypesBySize(limit));
                     }
                 } else {
-                    response.put("success", false);
-                    response.put("error", "Data collector not available");
+                    sendError(exchange, "Data collector not available", 500);
                 }
-
-                response.put("timestamp", System.currentTimeMillis());
-                sendJsonResponse(exchange, response, 200);
             } catch (Exception e) {
-                sendErrorResponse(exchange, e.getMessage(), 500);
+                sendError(exchange, e.getMessage(), 500);
             }
         }
     }
@@ -549,27 +548,20 @@ public class AgentServer {
         public void handle(HttpExchange exchange) throws IOException {
             try {
                 StatsAggregator aggregator = getStatsAggregator();
-                Map<String, Object> response = new HashMap<>();
-
                 if (aggregator != null) {
                     aggregator.takeSnapshot();
                     int windowSec = getIntParam(exchange, "window", 60);
-                    response.put("success", true);
 
                     Map<String, Object> data = new HashMap<>();
                     data.put("currentRateBytesPerSec", aggregator.getCurrentRateBytesPerSec());
                     data.put("trend", aggregator.getTrend().name());
                     data.put("windowRates", aggregator.getRateHistory(windowSec));
-                    response.put("data", data);
+                    sendSuccess(exchange, data);
                 } else {
-                    response.put("success", false);
-                    response.put("error", "Stats aggregator not available");
+                    sendError(exchange, "Stats aggregator not available", 500);
                 }
-
-                response.put("timestamp", System.currentTimeMillis());
-                sendJsonResponse(exchange, response, 200);
             } catch (Exception e) {
-                sendErrorResponse(exchange, e.getMessage(), 500);
+                sendError(exchange, e.getMessage(), 500);
             }
         }
     }
@@ -579,20 +571,13 @@ public class AgentServer {
         public void handle(HttpExchange exchange) throws IOException {
             try {
                 StatsAggregator aggregator = getStatsAggregator();
-                Map<String, Object> response = new HashMap<>();
-
                 if (aggregator != null) {
-                    response.put("success", true);
-                    response.put("data", aggregator.getSummary());
+                    sendSuccess(exchange, aggregator.getSummary());
                 } else {
-                    response.put("success", false);
-                    response.put("error", "Stats aggregator not available");
+                    sendError(exchange, "Stats aggregator not available", 500);
                 }
-
-                response.put("timestamp", System.currentTimeMillis());
-                sendJsonResponse(exchange, response, 200);
             } catch (Exception e) {
-                sendErrorResponse(exchange, e.getMessage(), 500);
+                sendError(exchange, e.getMessage(), 500);
             }
         }
     }
@@ -603,17 +588,16 @@ public class AgentServer {
         @Override
         public void handle(HttpExchange exchange) throws IOException {
             try {
-                Map<String, Object> response = new HashMap<>();
+                Map<String, Object> status;
 
                 if (AgentContext.isInitialized()) {
                     AgentContext ctx = AgentContext.getInstance();
                     AgentJVMTILoader loader = ctx.getJvmtiLoader();
 
-                    response.put("success", true);
                     if (loader != null) {
-                        response.put("data", loader.getStatus());
+                        status = loader.getStatus();
                     } else {
-                        Map<String, Object> status = new HashMap<>();
+                        status = new HashMap<>();
                         status.put("enabled", ctx.getConfig().isJvmtiEnabled());
                         status.put("autoLoad", ctx.getConfig().isJvmtiAutoLoad());
                         status.put("loaded", false);
@@ -621,17 +605,17 @@ public class AgentServer {
                         status.put("error", "JVMTI loader not initialized");
                         status.put("platform", System.getProperty("os.name"));
                         status.put("arch", System.getProperty("os.arch"));
-                        response.put("data", status);
                     }
                 } else {
-                    response.put("success", false);
-                    response.put("error", "Agent context not initialized");
+                    status = new HashMap<>();
+                    status.put("error", "Agent context not initialized");
+                    sendError(exchange, "Agent context not initialized", 500);
+                    return;
                 }
 
-                response.put("timestamp", System.currentTimeMillis());
-                sendJsonResponse(exchange, response, 200);
+                sendSuccess(exchange, status);
             } catch (Exception e) {
-                sendErrorResponse(exchange, e.getMessage(), 500);
+                sendError(exchange, e.getMessage(), 500);
             }
         }
     }
@@ -644,9 +628,22 @@ public class AgentServer {
             try {
                 int limit = getIntParam(exchange, "limit", 100);
                 HeapHistogram histogram = getLocalHeapHistogram(limit);
-                sendJsonResponse(exchange, histogram, 200);
+                // Convert to map for simple JSON serialization
+                Map<String, Object> result = new HashMap<>();
+                List<Map<String, Object>> statsList = new ArrayList<>();
+                for (ClassStats stats : histogram.getClassStats()) {
+                    Map<String, Object> statMap = new HashMap<>();
+                    statMap.put("className", stats.getClassName());
+                    statMap.put("objectCount", stats.getObjectCount());
+                    statMap.put("shallowBytes", stats.getShallowBytes());
+                    statsList.add(statMap);
+                }
+                result.put("classStats", statsList);
+                result.put("totalBytes", histogram.getTotalBytes());
+                result.put("totalObjects", histogram.getTotalObjects());
+                sendJson(exchange, toJson(result), 200);
             } catch (Exception e) {
-                sendErrorResponse(exchange, e.getMessage(), 500);
+                sendError(exchange, e.getMessage(), 500);
             }
         }
 
@@ -710,9 +707,41 @@ public class AgentServer {
         public void handle(HttpExchange exchange) throws IOException {
             try {
                 ThreadDump dump = getLocalThreadDump();
-                sendJsonResponse(exchange, dump, 200);
+                // Convert to map for simple JSON serialization
+                Map<String, Object> result = new HashMap<>();
+                result.put("threadCount", dump.getThreadStats() != null ? dump.getThreadStats().size() : 0);
+                result.put("timestamp", dump.getTimestamp() != null ? dump.getTimestamp().toString() : null);
+                List<Map<String, Object>> statsList = new ArrayList<>();
+                if (dump.getThreadStats() != null) {
+                    for (ThreadStats stats : dump.getThreadStats()) {
+                        Map<String, Object> statMap = new HashMap<>();
+                        statMap.put("threadId", stats.getThreadId());
+                        statMap.put("threadName", stats.getThreadName());
+                        statMap.put("state", stats.getState() != null ? stats.getState().name() : null);
+                        statMap.put("blockedCount", stats.getBlockedCount());
+                        statMap.put("blockedTime", stats.getBlockedTime());
+                        statMap.put("waitedCount", stats.getWaitedCount());
+                        statMap.put("waitedTime", stats.getWaitedTime());
+                        if (stats.getStackTrace() != null) {
+                            List<Map<String, Object>> stackList = new ArrayList<>();
+                            for (com.memdiag.core.thread.StackFrame frame : stats.getStackTrace()) {
+                                Map<String, Object> frameMap = new HashMap<>();
+                                frameMap.put("className", frame.getClassName());
+                                frameMap.put("methodName", frame.getMethodName());
+                                frameMap.put("fileName", frame.getFileName());
+                                frameMap.put("lineNumber", frame.getLineNumber());
+                                frameMap.put("nativeMethod", frame.isNativeMethod());
+                                stackList.add(frameMap);
+                            }
+                            statMap.put("stackTrace", stackList);
+                        }
+                        statsList.add(statMap);
+                    }
+                }
+                result.put("threadStats", statsList);
+                sendJson(exchange, toJson(result), 200);
             } catch (Exception e) {
-                sendErrorResponse(exchange, e.getMessage(), 500);
+                sendError(exchange, e.getMessage(), 500);
             }
         }
 
@@ -773,9 +802,43 @@ public class AgentServer {
         public void handle(HttpExchange exchange) throws IOException {
             try {
                 DiagnosisResult result = performLocalDiagnosis();
-                sendJsonResponse(exchange, result, 200);
+                // Convert to map for simple JSON serialization
+                Map<String, Object> resultMap = new HashMap<>();
+                resultMap.put("timestamp", result.getTimestamp() != null ? result.getTimestamp().toString() : null);
+                resultMap.put("totalHeapUsed", result.getTotalHeapUsed());
+                resultMap.put("totalHeapCommitted", result.getTotalHeapCommitted());
+                resultMap.put("threadCount", result.getThreadCount());
+                resultMap.put("summary", result.getSummary());
+                List<Map<String, Object>> issuesList = new ArrayList<>();
+                if (result.getIssues() != null) {
+                    for (com.memdiag.core.diagnose.Issue issue : result.getIssues()) {
+                        Map<String, Object> issueMap = new HashMap<>();
+                        issueMap.put("severity", issue.getSeverity() != null ? issue.getSeverity().name() : null);
+                        issueMap.put("type", issue.getType());
+                        issueMap.put("title", issue.getTitle());
+                        issueMap.put("description", issue.getDescription());
+                        issueMap.put("affectedClassName", issue.getAffectedClassName());
+                        issueMap.put("affectedObjectCount", issue.getAffectedObjectCount());
+                        issueMap.put("affectedBytes", issue.getAffectedBytes());
+                        if (issue.getRecommendations() != null) {
+                            List<Map<String, Object>> recList = new ArrayList<>();
+                            for (com.memdiag.core.diagnose.Recommendation rec : issue.getRecommendations()) {
+                                Map<String, Object> recMap = new HashMap<>();
+                                recMap.put("priority", rec.getPriority());
+                                recMap.put("title", rec.getTitle());
+                                recMap.put("description", rec.getDescription());
+                                recMap.put("action", rec.getAction());
+                                recList.add(recMap);
+                            }
+                            issueMap.put("recommendations", recList);
+                        }
+                        issuesList.add(issueMap);
+                    }
+                }
+                resultMap.put("issues", issuesList);
+                sendJson(exchange, toJson(resultMap), 200);
             } catch (Exception e) {
-                sendErrorResponse(exchange, e.getMessage(), 500);
+                sendError(exchange, e.getMessage(), 500);
             }
         }
 
@@ -789,7 +852,7 @@ public class AgentServer {
                 .timestamp(java.time.Instant.now())
                 .totalHeapUsed(heapUsed)
                 .totalHeapCommitted(heapCommitted)
-                .threadCount(threadDump.getThreadCount());
+                .threadCount(threadDump.getThreadStats() != null ? threadDump.getThreadStats().size() : 0);
 
             List<com.memdiag.core.diagnose.Issue> issues = new ArrayList<>();
 
@@ -823,7 +886,7 @@ public class AgentServer {
                 criticalCount, warningCount, infoCount,
                 histogram.getTotalBytes(),
                 histogram.getClassStats().size(),
-                threadDump.getThreadCount(),
+                threadDump.getThreadStats() != null ? threadDump.getThreadStats().size() : 0,
                 registry.getEnabledRules().size());
 
             result.summary(summary);
@@ -879,21 +942,14 @@ public class AgentServer {
         public void handle(HttpExchange exchange) throws IOException {
             try {
                 MethodMonitorTransformer transformer = getMethodMonitorTransformer();
-                Map<String, Object> response = new HashMap<>();
-
                 if (transformer != null) {
                     int limit = getIntParam(exchange, "limit", 20);
-                    response.put("success", true);
-                    response.put("data", transformer.toMap(limit));
+                    sendSuccess(exchange, transformer.toMap(limit));
                 } else {
-                    response.put("success", false);
-                    response.put("error", "Method monitor transformer not available");
+                    sendError(exchange, "Method monitor transformer not available", 500);
                 }
-
-                response.put("timestamp", System.currentTimeMillis());
-                sendJsonResponse(exchange, response, 200);
             } catch (Exception e) {
-                sendErrorResponse(exchange, e.getMessage(), 500);
+                sendError(exchange, e.getMessage(), 500);
             }
         }
     }
@@ -903,8 +959,6 @@ public class AgentServer {
         public void handle(HttpExchange exchange) throws IOException {
             try {
                 MethodMonitorTransformer transformer = getMethodMonitorTransformer();
-                Map<String, Object> response = new HashMap<>();
-
                 if (transformer != null) {
                     long thresholdMs = getIntParam(exchange, "threshold", 100);
                     int limit = getIntParam(exchange, "limit", 10);
@@ -916,17 +970,12 @@ public class AgentServer {
                         }
                     }
 
-                    response.put("success", true);
-                    response.put("data", slowMethods);
+                    sendSuccess(exchange, slowMethods);
                 } else {
-                    response.put("success", false);
-                    response.put("error", "Method monitor transformer not available");
+                    sendError(exchange, "Method monitor transformer not available", 500);
                 }
-
-                response.put("timestamp", System.currentTimeMillis());
-                sendJsonResponse(exchange, response, 200);
             } catch (Exception e) {
-                sendErrorResponse(exchange, e.getMessage(), 500);
+                sendError(exchange, e.getMessage(), 500);
             }
         }
     }
@@ -936,26 +985,22 @@ public class AgentServer {
         public void handle(HttpExchange exchange) throws IOException {
             try {
                 InstrumentManager manager = getInstrumentManager();
-                Map<String, Object> response = new HashMap<>();
+                Map<String, Object> status;
 
                 if (manager != null) {
-                    response.put("success", true);
-                    response.put("data", manager.toMap());
+                    status = manager.toMap();
                 } else {
-                    Map<String, Object> status = new HashMap<>();
+                    status = new HashMap<>();
                     status.put("initialized", false);
                     status.put("message", "Instrument manager not available");
                     if (AgentContext.isInitialized()) {
                         status.put("configEnabled", AgentContext.getInstance().getConfig().isInstrumentationEnabled());
                     }
-                    response.put("success", true);
-                    response.put("data", status);
                 }
 
-                response.put("timestamp", System.currentTimeMillis());
-                sendJsonResponse(exchange, response, 200);
+                sendSuccess(exchange, status);
             } catch (Exception e) {
-                sendErrorResponse(exchange, e.getMessage(), 500);
+                sendError(exchange, e.getMessage(), 500);
             }
         }
     }
@@ -964,31 +1009,27 @@ public class AgentServer {
         @Override
         public void handle(HttpExchange exchange) throws IOException {
             if (!"POST".equals(exchange.getRequestMethod())) {
-                sendErrorResponse(exchange, "Method not allowed", 405);
+                sendError(exchange, "Method not allowed", 405);
                 return;
             }
 
             try {
                 InstrumentManager manager = getInstrumentManager();
-                Map<String, Object> response = new HashMap<>();
-
                 if (manager != null) {
                     boolean success = manager.enableAllocationTracking();
+                    Map<String, Object> response = new HashMap<>();
                     response.put("success", success);
                     if (success) {
                         response.put("message", "Allocation tracking enabled");
                     } else {
                         response.put("error", "Failed to enable allocation tracking");
                     }
+                    sendSuccess(exchange, response);
                 } else {
-                    response.put("success", false);
-                    response.put("error", "Instrument manager not available");
+                    sendError(exchange, "Instrument manager not available", 500);
                 }
-
-                response.put("timestamp", System.currentTimeMillis());
-                sendJsonResponse(exchange, response, 200);
             } catch (Exception e) {
-                sendErrorResponse(exchange, e.getMessage(), 500);
+                sendError(exchange, e.getMessage(), 500);
             }
         }
     }
@@ -997,31 +1038,27 @@ public class AgentServer {
         @Override
         public void handle(HttpExchange exchange) throws IOException {
             if (!"POST".equals(exchange.getRequestMethod())) {
-                sendErrorResponse(exchange, "Method not allowed", 405);
+                sendError(exchange, "Method not allowed", 405);
                 return;
             }
 
             try {
                 InstrumentManager manager = getInstrumentManager();
-                Map<String, Object> response = new HashMap<>();
-
                 if (manager != null) {
                     boolean success = manager.disableAllocationTracking();
+                    Map<String, Object> response = new HashMap<>();
                     response.put("success", success);
                     if (success) {
                         response.put("message", "Allocation tracking disabled");
                     } else {
                         response.put("error", "Failed to disable allocation tracking");
                     }
+                    sendSuccess(exchange, response);
                 } else {
-                    response.put("success", false);
-                    response.put("error", "Instrument manager not available");
+                    sendError(exchange, "Instrument manager not available", 500);
                 }
-
-                response.put("timestamp", System.currentTimeMillis());
-                sendJsonResponse(exchange, response, 200);
             } catch (Exception e) {
-                sendErrorResponse(exchange, e.getMessage(), 500);
+                sendError(exchange, e.getMessage(), 500);
             }
         }
     }
@@ -1030,31 +1067,27 @@ public class AgentServer {
         @Override
         public void handle(HttpExchange exchange) throws IOException {
             if (!"POST".equals(exchange.getRequestMethod())) {
-                sendErrorResponse(exchange, "Method not allowed", 405);
+                sendError(exchange, "Method not allowed", 405);
                 return;
             }
 
             try {
                 InstrumentManager manager = getInstrumentManager();
-                Map<String, Object> response = new HashMap<>();
-
                 if (manager != null) {
                     boolean success = manager.enableMethodMonitoring();
+                    Map<String, Object> response = new HashMap<>();
                     response.put("success", success);
                     if (success) {
                         response.put("message", "Method monitoring enabled");
                     } else {
                         response.put("error", "Failed to enable method monitoring");
                     }
+                    sendSuccess(exchange, response);
                 } else {
-                    response.put("success", false);
-                    response.put("error", "Instrument manager not available");
+                    sendError(exchange, "Instrument manager not available", 500);
                 }
-
-                response.put("timestamp", System.currentTimeMillis());
-                sendJsonResponse(exchange, response, 200);
             } catch (Exception e) {
-                sendErrorResponse(exchange, e.getMessage(), 500);
+                sendError(exchange, e.getMessage(), 500);
             }
         }
     }
@@ -1063,31 +1096,27 @@ public class AgentServer {
         @Override
         public void handle(HttpExchange exchange) throws IOException {
             if (!"POST".equals(exchange.getRequestMethod())) {
-                sendErrorResponse(exchange, "Method not allowed", 405);
+                sendError(exchange, "Method not allowed", 405);
                 return;
             }
 
             try {
                 InstrumentManager manager = getInstrumentManager();
-                Map<String, Object> response = new HashMap<>();
-
                 if (manager != null) {
                     boolean success = manager.disableMethodMonitoring();
+                    Map<String, Object> response = new HashMap<>();
                     response.put("success", success);
                     if (success) {
                         response.put("message", "Method monitoring disabled");
                     } else {
                         response.put("error", "Failed to disable method monitoring");
                     }
+                    sendSuccess(exchange, response);
                 } else {
-                    response.put("success", false);
-                    response.put("error", "Instrument manager not available");
+                    sendError(exchange, "Instrument manager not available", 500);
                 }
-
-                response.put("timestamp", System.currentTimeMillis());
-                sendJsonResponse(exchange, response, 200);
             } catch (Exception e) {
-                sendErrorResponse(exchange, e.getMessage(), 500);
+                sendError(exchange, e.getMessage(), 500);
             }
         }
     }

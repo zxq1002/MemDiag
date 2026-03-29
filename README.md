@@ -474,13 +474,13 @@ Analysis complete: 0 critical, 0 warning, 0 info issues found. Heap: 55,312,816 
 
 #### 内置诊断规则
 
-| 规则类型 | 阈值 | 严重程度 | 说明 |
-|---------|------|----------|------|
-| **LARGE_CLASS** | 单个类占用 > 100MB | WARNING | 检测占用过大内存的类 |
-| **MANY_INSTANCES** | 单个类实例数 > 100,000 | INFO | 检测实例数过多的类 |
-| **MANY_BLOCKED_THREADS** | BLOCKED 线程 > 10 个 | CRITICAL | 检测大量阻塞线程（可能死锁） |
-| **LARGE_COLLECTION** | 集合类实例数 > 50,000 | INFO | 检测大量使用的集合（List/Map/Set） |
-| **HEAP_LEAK_SUSPECT** | 复合条件 | WARNING | 堆内存泄漏嫌疑检测（高实例数+大内存、堆占比>20%、缓存/集合异常） |
+| 规则 ID | 规则名称 | 严重程度 | 检测逻辑说明 |
+|---------|---------|----------|--------------|
+| **RULE-001** | 大对象类检测 | WARNING | 单个类所有实例占用的 Shallow Heap 总量 > 100MB。 |
+| **RULE-002** | 高实例数检测 | INFO | 单个类的活跃实例总数超过 100,000 个。 |
+| **RULE-003** | 阻塞线程检测 | CRITICAL | JVM 中处于 `BLOCKED` 状态的线程数超过 10 个（潜在死锁或资源争抢）。 |
+| **RULE-004** | 巨型集合检测 | INFO | 常见的集合类（List/Map/Set）实例数异常过多（> 50,000）。 |
+| **RULE-005** | 内存泄漏嫌疑 | WARNING | 综合判断：高实例数 + 大内存占用（>50MB）且占堆内存比例 > 20%，或缓存/集合类异常增长。 |
 
 #### 实现原理
 
@@ -551,18 +551,20 @@ DiagnosisEngine engine = new DiagnosisEngine(
 
 **子命令**: `native`
 
-分析 JVM 的堆外内存使用情况（Linux 专用）。
+分析 JVM 的堆外内存使用情况（Linux 专用，JVMTI 模式下支持部分跨平台基础统计）。
 
 #### 功能说明
 
-- 通过 `/proc` 文件系统分析堆外内存
+- 通过 `/proc` 文件系统分析堆外内存（仅限 Linux）
 - 显示虚拟内存和物理内存使用
-- 识别内存区域和加载的库
+- 识别内存区域和加载的库（Linux）
 - 检测堆外内存泄漏
+- **跨平台支持**：在加载 JVMTI 原生库后，可在 macOS/Windows 上查看 JVM 内部的原生内存摘要（如 Metaspace, Code Cache 等）
+- 支持动态 Attach/Detach Java Agent
 
 **注意**：本命令在整体的两种使用模式（JMX 模式 / Agent 模式）下都能工作：
 - **JMX 模式（默认）**：CLI 直接读取本地 `/proc`（仅同一机器时可用）
-- **Agent 模式（`--agent`）**：Agent 在目标 JVM 读取 `/proc`，通过 HTTP 返回（支持跨机器）
+- **Agent 模式（`--agent`）**：Agent 在目标 JVM 读取 `/proc` 或通过 JVMTI 获取数据，通过 HTTP 返回（支持跨机器）
 
 #### 在两种使用模式下的差异
 
@@ -1359,7 +1361,7 @@ memdiag agent jvmti --agent=localhost:6789
 
 **子命令**: `allocations`
 
-显示内存分配统计和趋势（需要 Agent 模式）。
+显示内存分配统计和趋势（**必需指定 `--agent` 参数**）。
 
 #### 功能说明
 
@@ -1448,7 +1450,7 @@ java.nio.HeapByteBuffer                          567,890,123       12,345
 
 **子命令**: `methods`
 
-显示方法监控统计（需要 Agent 模式）。
+显示方法监控统计（**必需指定 `--agent` 参数**）。
 
 #### 功能说明
 
@@ -1627,6 +1629,48 @@ memdiag-cli (JDK)
 | 方法监控 API 框架 | ✅ |
 | 分配统计（速率、Top N、趋势） | ✅ |
 | JVMTI 自动检测与优雅降级 | ✅ |
+
+---
+
+### JVMTI 增强功能深度解析
+
+当 `memdiag-agent.jar` 成功加载 `libmemdiag-agent.so` 原生库后，诊断能力将从 Java 应用层深入到 JVM 虚拟机底层。
+
+#### JVMTI 加载前后对比
+
+| 功能维度 | 仅 Java Agent (ASM/JMX) | 开启 JVMTI (Native 模式) | 核心差异 |
+| :--- | :--- | :--- | :--- |
+| **分配追踪** | 采样/特定类插桩（不完整） | **全量/高精度追踪** | 能够捕获所有对象分配，包括 JDK 内部类，无需修改字节码。 |
+| **原生内存** | 仅显示总体概况 (RSS/VSZ) | **精确定位到函数符号** | 能够识别是哪个 `.so` 库或 JVM 内部模块（如 GC、CodeCache）申请了内存。 |
+| **堆分析** | 依赖标准 JMX 接口 | **实时堆遍历 (Heap Walking)** | 能够实时追踪引用链，查找 GC Roots，定位泄露源头。 |
+| **线程栈** | 仅 Java 调用栈 | **Java + 原生混合栈 (Mixed)** | 输出包含 **OS Thread ID (TID)**，支持 Java 与 C/C++ 混合调用栈。 |
+| **性能损耗** | 较高（字节码膨胀） | **较低（JVM 原生回调）** | 事件由 JVM 底层分发，对 JIT 优化和方法内联影响极小。 |
+
+#### 如何触发 JVMTI 增强功能
+
+加载 JVMTI 后，以下命令将自动切换到“增强模式”或解锁新能力：
+
+1. **全量对象分配统计**
+   - **命令**：`memdiag allocations --agent=localhost:6789`
+   - **能力**：利用 `VMObjectAlloc` 事件，实时监控所有类的分配速率和存活分布。
+
+2. **深度原生内存诊断**
+   - **命令**：`memdiag native --diagnose --agent=localhost:6789`
+   - **能力**：区分 Metaspace、Code Cache、GC 数据结构以及特定 JNI 库的内存占用。
+
+3. **GC Root 引用链追踪**
+   - **命令**：`memdiag gc-roots <object_id> --agent=localhost:6789`
+   - **能力**：实时遍历堆内存，告诉你一个对象为什么不能被回收，显示从 Root 到对象的完整路径。
+
+4. **混合栈与线程 TID 关联**
+   - **命令**：`memdiag threads --stacks --agent=localhost:6789`
+   - **能力**：输出中包含 **Native TID**，方便与系统级工具（如 `top`）对齐，并展示更精准的线程状态。
+
+5. **原生代理状态检查**
+   - **命令**：`memdiag agent jvmti --agent=localhost:6789`
+   - **能力**：查看 JVMTI 库加载状态、已注册回调及 Native 层内存开销。
+
+> **优雅降级机制**：如果原生库加载失败（如平台不兼容），MemDiag 会自动回退到纯 Java 模式，确保基础诊断功能依然可用。
 
 ---
 

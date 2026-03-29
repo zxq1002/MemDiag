@@ -22,7 +22,7 @@ public class AgentConfig {
     private int samplingRate = 100; // 1% sampling by default (1 out of 100)
     private String[] includePackages = new String[0];
 
-    // JVMTI configuration
+    // JVMTI configuration (enabled by default, gracefully degrade if load fails)
     private boolean jvmtiEnabled = true;
     private boolean jvmtiAutoLoad = true;
 
