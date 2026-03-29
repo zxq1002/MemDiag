@@ -26,6 +26,7 @@
 - [高级配置](#高级配置)
 - [故障排除](#故障排除)
 - [开发文档](#开发文档)
+- [Web 界面](#web-界面)
 
 ---
 
@@ -2236,6 +2237,119 @@ memdiag allocations --top=20 --agent=localhost:6789   # Top 20 分配类型
 memdiag methods --limit=20 --agent=localhost:6789     # 方法统计（按时间）
 memdiag methods --sort=count --agent=localhost:6789    # 方法统计（按调用次数）
 ```
+
+---
+
+## Web 界面
+
+MemDiag 提供基于 Spring Boot 的 Web 后端服务，支持通过 REST API 和 WebSocket 进行实时内存分析。
+
+### 功能特性
+
+- **多连接管理** - 同时连接和管理多个 JVM 进程
+- **REST API** - 提供完整的分析能力 HTTP 接口
+- **实时监控** - WebSocket 支持实时推送分析数据
+- **健康检查** - 集成 Spring Boot Actuator
+
+### 快速启动
+
+```bash
+# 进入 web 模块目录
+cd memdiag-web
+
+# 启动 Web 服务
+mvn spring-boot:run
+
+# 或者打包后运行
+mvn clean package
+java -jar target/memdiag-web-1.0.0-SNAPSHOT.jar
+```
+
+服务默认启动在 `http://localhost:8080`
+
+### API 端点
+
+#### 连接管理
+
+| 端点 | 方法 | 说明 |
+|------|------|------|
+| `/api/v1/connections` | GET | 获取所有连接 |
+| `/api/v1/connections/{id}` | POST | 创建新连接（可选 pid 参数） |
+| `/api/v1/connections/{id}` | DELETE | 断开连接 |
+
+#### 分析接口
+
+| 端点 | 方法 | 说明 |
+|------|------|------|
+| `/api/v1/histogram/{id}` | GET | 获取堆直方图（limit 参数） |
+| `/api/v1/threads/{id}` | GET | 获取线程分析 |
+| `/api/v1/diagnose/{id}` | GET | 运行自动诊断 |
+| `/api/v1/nmt/{id}` | GET | 获取 NMT 分析（detail 参数） |
+
+#### Actuator 端点
+
+| 端点 | 说明 |
+|------|------|
+| `/actuator/health` | 健康检查 |
+| `/actuator/metrics` | 应用指标 |
+| `/actuator/info` | 应用信息 |
+
+### 使用示例
+
+#### 1. 连接到目标 JVM
+
+```bash
+# 连接到本地 JVM（当前进程）
+curl -X POST "http://localhost:8080/api/v1/connections/local"
+
+# 连接到指定 PID 的 JVM
+curl -X POST "http://localhost:8080/api/v1/connections/myapp?pid=12345"
+```
+
+#### 2. 获取分析数据
+
+```bash
+# 获取堆直方图（前 20 名）
+curl "http://localhost:8080/api/v1/histogram/myapp?limit=20"
+
+# 获取线程分析
+curl "http://localhost:8080/api/v1/threads/myapp"
+
+# 运行自动诊断
+curl "http://localhost:8080/api/v1/diagnose/myapp"
+
+# 获取 NMT 分析
+curl "http://localhost:8080/api/v1/nmt/myapp?detail=true"
+```
+
+#### 3. 断开连接
+
+```bash
+curl -X DELETE "http://localhost:8080/api/v1/connections/myapp"
+```
+
+### 配置选项
+
+可以通过 `application.properties` 或环境变量配置：
+
+```properties
+# 服务端口
+server.port=8080
+
+# 上下文路径
+server.servlet.context-path=/
+
+# Actuator 端点暴露
+management.endpoints.web.exposure.include=health,info,metrics
+```
+
+### 技术栈
+
+- **Spring Boot 2.7** - Web 框架
+- **Spring WebSocket** - 实时通信
+- **Spring Actuator** - 监控和管理
+- **MemDiag Core** - 核心分析能力
+- **MemDiag Agent** - Agent 集成
 
 ---
 
