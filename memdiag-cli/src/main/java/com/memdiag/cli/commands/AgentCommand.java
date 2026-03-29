@@ -205,7 +205,78 @@ public class AgentCommand {
             }
 
             JsonObject jvmtiStatus = client.getJvmtiStatus();
-            parent.printJson(jvmtiStatus);
+            if (jvmtiStatus != null && jvmtiStatus.has("success") && jvmtiStatus.get("success").getAsBoolean()) {
+                JsonObject data = jvmtiStatus.getAsJsonObject("data");
+                if (data != null) {
+                    displayJVMTIStatus(data);
+                } else {
+                    parent.printJson(jvmtiStatus);
+                }
+            } else {
+                parent.printJson(jvmtiStatus);
+            }
+        }
+
+        private void displayJVMTIStatus(JsonObject data) {
+            boolean enabled = data.has("enabled") && data.get("enabled").getAsBoolean();
+            boolean autoLoad = data.has("autoLoad") && data.get("autoLoad").getAsBoolean();
+            boolean loaded = data.has("loaded") && data.get("loaded").getAsBoolean();
+            boolean available = data.has("available") && data.get("available").getAsBoolean();
+            String platform = data.has("platform") ? data.get("platform").getAsString() : "unknown";
+            String arch = data.has("arch") ? data.get("arch").getAsString() : "unknown";
+            String error = data.has("error") ? data.get("error").getAsString() : null;
+
+            System.out.println();
+            System.out.println("┌─────────────────────────────────────────────────────────────────┐");
+            System.out.println("│                      JVMTI Configuration                        │");
+            System.out.println("├─────────────────────────────────────────────────────────────────┤");
+
+            System.out.printf("│ Enabled:       %-46s │%n", enabled ? "YES" : "NO");
+            System.out.printf("│ Auto-Load:     %-46s │%n", autoLoad ? "YES" : "NO");
+            System.out.printf("│ Load Attempt:  %-46s │%n", loaded ? "Made" : "Not made");
+
+            if (available) {
+                System.out.println("├─────────────────────────────────────────────────────────────────┤");
+                System.out.println("│ ✅ JVMTI is available and active!                              │");
+                System.out.printf("│ Platform:      %-46s │%n", platform + "/" + arch);
+                System.out.println("└─────────────────────────────────────────────────────────────────┘");
+            } else {
+                System.out.println("├─────────────────────────────────────────────────────────────────┤");
+                System.out.println("│ ⚠️  JVMTI not available                                        │");
+                System.out.printf("│ Platform:      %-46s │%n", platform + "/" + arch);
+                if (error != null) {
+                    System.out.println("├─────────────────────────────────────────────────────────────────┤");
+                    System.out.println("│ Reason:                                                         │");
+                    String wrapped = wrapText(error, 59);
+                    for (String line : wrapped.split("\n")) {
+                        System.out.printf("│   %-59s │%n", line);
+                    }
+                }
+                System.out.println("├─────────────────────────────────────────────────────────────────┤");
+                System.out.println("│ Basic functionality (heap, threads, allocations) still works!  │");
+                System.out.println("└─────────────────────────────────────────────────────────────────┘");
+            }
+            System.out.println();
+        }
+
+        private String wrapText(String text, int maxLen) {
+            StringBuilder result = new StringBuilder();
+            StringBuilder line = new StringBuilder();
+            for (String word : text.split(" ")) {
+                if (line.length() + word.length() + 1 > maxLen) {
+                    if (result.length() > 0) result.append("\n");
+                    result.append(line);
+                    line = new StringBuilder(word);
+                } else {
+                    if (line.length() > 0) line.append(" ");
+                    line.append(word);
+                }
+            }
+            if (line.length() > 0) {
+                if (result.length() > 0) result.append("\n");
+                result.append(line);
+            }
+            return result.toString();
         }
     }
 

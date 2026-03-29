@@ -20,6 +20,13 @@
             <artifactId>memdiag-core</artifactId>
             <version>${project.version}</version>
         </dependency>
+        <!-- Optional: memdiag-native for JVMTI support -->
+        <dependency>
+            <groupId>com.memdiag</groupId>
+            <artifactId>memdiag-native</artifactId>
+            <version>${project.version}</version>
+            <optional>true</optional>
+        </dependency>
         <dependency>
             <groupId>com.google.code.gson</groupId>
             <artifactId>gson</artifactId>

@@ -34,7 +34,18 @@ public class MemDiagAgent {
 
     private static synchronized void initialize(String agentArgs, Instrumentation inst, boolean isAttach) {
         if (AgentContext.isInitialized()) {
+            System.out.println("[MemDiag] Agent already initialized");
             return;
+        }
+
+        System.out.println("");
+        System.out.println("╔═══════════════════════════════════════════════════════════════╗");
+        System.out.println("║                    MemDiag Agent Starting                       ║");
+        System.out.println("╚═══════════════════════════════════════════════════════════════╝");
+        if (isAttach) {
+            System.out.println("[MemDiag] Attaching to running JVM...");
+        } else {
+            System.out.println("[MemDiag] Starting with premain...");
         }
 
         instrumentation = inst;
@@ -44,13 +55,55 @@ public class MemDiagAgent {
 
         if (startServer(config, context, inst)) {
             context.setState(AgentContext.AgentState.RUNNING);
+            System.out.printf("[MemDiag] HTTP server started on %s:%d%n",
+                    config.getHttpHost(), config.getHttpPort());
         } else {
             context.setState(AgentContext.AgentState.STOPPED);
+            System.err.println("[MemDiag] Failed to start HTTP server");
             return;
         }
 
         addShutdownHook(context);
         initializeOptionalComponents(config, context);
+
+        // Print final status summary
+        printStartupSummary(context, config);
+    }
+
+    private static void printStartupSummary(AgentContext context, AgentConfig config) {
+        System.out.println("");
+        System.out.println("┌─────────────────────────────────────────────────────────────────┐");
+        System.out.println("│                      MemDiag Agent Ready                         │");
+        System.out.println("├─────────────────────────────────────────────────────────────────┤");
+
+        System.out.printf("│ HTTP Server:  %-50s │%n",
+                config.getHttpHost() + ":" + config.getHttpPort());
+
+        String instrStatus = config.isInstrumentationEnabled() ? "ENABLED" : "disabled";
+        System.out.printf("│ Instrumentation: %-46s │%n", instrStatus);
+
+        String jvmtiStatus = "UNKNOWN";
+        if (context.getJvmtiLoader() != null) {
+            if (context.getJvmtiLoader().isAvailable()) {
+                jvmtiStatus = "ENABLED (native)";
+            } else if (context.getJvmtiLoader().getLoadError() != null) {
+                jvmtiStatus = "DISABLED (" + context.getJvmtiLoader().getLoadError() + ")";
+            } else {
+                jvmtiStatus = "not loaded";
+            }
+        } else if (!config.isJvmtiEnabled()) {
+            jvmtiStatus = "disabled by config";
+        }
+        System.out.printf("│ JVMTI:         %-46s │%n", jvmtiStatus);
+
+        System.out.println("└─────────────────────────────────────────────────────────────────┘");
+        System.out.println("");
+        System.out.println("[MemDiag] Available commands:");
+        System.out.println("  memdiag --agent=" + config.getHttpHost() + ":" + config.getHttpPort() + " histogram");
+        System.out.println("  memdiag --agent=" + config.getHttpHost() + ":" + config.getHttpPort() + " threads");
+        System.out.println("  memdiag --agent=" + config.getHttpHost() + ":" + config.getHttpPort() + " diagnose");
+        System.out.println("  memdiag --agent=" + config.getHttpHost() + ":" + config.getHttpPort() + " allocations");
+        System.out.println("");
     }
 
     private static boolean startServer(AgentConfig config, AgentContext context, Instrumentation inst) {

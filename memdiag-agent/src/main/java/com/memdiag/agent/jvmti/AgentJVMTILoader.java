@@ -37,13 +37,14 @@ public class AgentJVMTILoader {
             return false;
         }
 
-        System.out.println("[MemDiag] Attempting to load JVMTI native library...");
+        System.out.println("[MemDiag] Checking for JVMTI native library...");
 
         // Check if we're on Linux (JVMTI only supported on Linux currently)
         String osName = System.getProperty("os.name").toLowerCase();
         if (!osName.contains("linux")) {
             loadError = "JVMTI only supported on Linux (current: " + osName + ")";
             System.out.println("[MemDiag] " + loadError);
+            System.out.println("[MemDiag] JVMTI features will not be available, but basic functionality still works");
             return false;
         }
 
@@ -51,6 +52,8 @@ public class AgentJVMTILoader {
         try {
             // Use reflection to load NativeLoader to avoid hard dependency
             Class<?> nativeLoaderClass = Class.forName("com.memdiag.nativeimpl.NativeLoader");
+
+            System.out.println("[MemDiag] Found NativeLoader, attempting to load JVMTI library...");
 
             // Check if the library is already loaded
             java.lang.reflect.Method isLoadedMethod = nativeLoaderClass.getMethod("isLoaded");
@@ -75,16 +78,20 @@ public class AgentJVMTILoader {
             } else {
                 loadError = "Failed to load JVMTI native library";
                 System.out.println("[MemDiag] " + loadError);
+                System.out.println("[MemDiag] JVMTI features will not be available, but basic functionality still works");
                 return false;
             }
 
         } catch (ClassNotFoundException e) {
-            loadError = "NativeLoader not found (memdiag-native not in classpath)";
+            loadError = "memdiag-native not in classpath";
             System.out.println("[MemDiag] " + loadError);
+            System.out.println("[MemDiag] To enable JVMTI features, include memdiag-native in the agent classpath");
+            System.out.println("[MemDiag] Basic functionality (heap, threads, allocations) is still available");
             return false;
         } catch (Exception e) {
             loadError = "Error loading JVMTI library: " + e.getMessage();
             System.err.println("[MemDiag] " + loadError);
+            System.out.println("[MemDiag] JVMTI features will not be available, but basic functionality still works");
             e.printStackTrace();
             return false;
         }
