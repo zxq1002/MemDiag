@@ -13,7 +13,7 @@ public class AgentConfig {
     private static final String PREFIX = "memdiag.agent.";
 
     // HTTP server configuration
-    private String httpHost = "localhost";
+    private String httpHost = "0.0.0.0";
     private int httpPort = 6789;
 
     // Instrumentation configuration

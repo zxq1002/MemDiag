@@ -87,9 +87,17 @@ echo "步骤 3: 启动测试容器并运行测试..."
 echo ""
 
 # 复制测试脚本到容器并执行
-docker run --name memdiag-test-container --rm \
+echo "启动容器: memdiag-demo (端口映射: 6789:6789)"
+docker run --name memdiag-demo \
     --platform linux/amd64 \
     --cap-add=SYS_PTRACE \
+    -p 6789:6789 \
     -v "$(pwd)/demo/test-full-suite.sh:/app/test-full-suite.sh" \
-    memdiag-test \
+    -d memdiag-test \
     bash -c "chmod +x /app/test-full-suite.sh && /app/test-full-suite.sh"
+
+echo "测试套件正在后台运行。你可以通过以下方式查看日志:"
+echo "  docker logs -f memdiag-demo"
+echo ""
+echo "Agent 接口现已暴露在宿主机的 6789 端口，可用于 Web 模块验证。"
+
