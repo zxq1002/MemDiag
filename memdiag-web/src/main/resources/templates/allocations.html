@@ -1,0 +1,217 @@
+<!DOCTYPE html>
+<html lang="zh-CN" xmlns:th="http://www.thymeleaf.org">
+<head th:replace="layout :: head"></head>
+<body>
+    <div class="wrapper">
+        <aside th:replace="layout :: sidebar"></aside>
+        <main class="main-content">
+            <header th:replace="layout :: header"></header>
+            <div class="content">
+                <div class="card" style="margin-bottom: 20px;">
+                    <div class="card-body">
+                        <div class="d-flex align-items-center gap-3">
+                            <i class="bi bi-info-circle" style="font-size: 1.5rem; color: var(--info-color);"></i>
+                            <div>
+                                <strong>连接:</strong> <span id="connectionName">-</strong>
+                            </div>
+                            <div class="ms-auto">
+                                <button class="btn btn-primary" id="refreshBtn">
+                                    <i class="bi bi-arrow-repeat"></i> 刷新
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="alert alert-info">
+                    <i class="bi bi-info-circle"></i>
+                    分配追踪功能需要 Agent 字节码插桩支持。
+                </div>
+
+                <div class="stats-grid" style="margin-bottom: 20px;">
+                    <div class="stat-card">
+                        <div class="stat-icon primary">
+                            <i class="bi bi-graph-up-arrow"></i>
+                        </div>
+                        <div class="stat-info">
+                            <h4>分配速率</h4>
+                            <div class="value" id="allocationRate">-</div>
+                        </div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-icon success">
+                            <i class="bi bi-box"></i>
+                        </div>
+                        <div class="stat-info">
+                            <h4>总分配量</h4>
+                            <div class="value" id="totalAllocated">-</div>
+                        </div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-icon warning">
+                            <i class="bi bi-list-ol"></i>
+                        </div>
+                        <div class="stat-info">
+                            <h4>事件数</h4>
+                            <div class="value" id="eventCount">-</div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="row" style="margin-bottom: 20px;">
+                    <div class="col-md-6">
+                        <div class="card">
+                            <div class="card-header">
+                                <h3><i class="bi bi-bar-chart"></i> Top N 分配类型</h3>
+                            </div>
+                            <div class="card-body">
+                                <div class="chart-container" style="height: 250px;">
+                                    <canvas id="topAllocChart"></canvas>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="col-md-6">
+                        <div class="card">
+                            <div class="card-header">
+                                <h3><i class="bi bi-clock-history"></i> 分配趋势</h3>
+                            </div>
+                            <div class="card-body">
+                                <div class="chart-container" style="height: 250px;">
+                                    <canvas id="trendChart"></canvas>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="card">
+                    <div class="card-header">
+                        <h3><i class="bi bi-list-ul"></i> 最近分配</h3>
+                    </div>
+                    <div class="card-body" id="allocationsContainer">
+                        <div class="alert alert-info" style="margin: 0;">
+                            <i class="bi bi-info-circle"></i> 请先通过 Agent 模式连接目标 JVM
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </main>
+    </div>
+
+    <script th:src="@{/js/memdiag.js}"></script>
+    <script th:fragment="scripts">
+        // Use the global connectionId from layout
+        let connectionId = currentConnectionId;
+        let topAllocChart = null;
+        let trendChart = null;
+
+        document.addEventListener('DOMContentLoaded', function() {
+            document.getElementById('connectionName').textContent = connectionId;
+            document.getElementById('refreshBtn').addEventListener('click', loadAllocations);
+            loadAllocations();
+        });
+
+        function formatBytes(bytes) {
+            if (bytes === 0) return '0 B';
+            const k = 1024;
+            const sizes = ['B', 'KB', 'MB', 'GB', 'TB'];
+            const i = Math.floor(Math.log(bytes) / Math.log(k));
+            return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
+        }
+
+        function loadAllocations() {
+            Promise.all([
+                fetch(`/api/v1/connections/${encodeURIComponent(connectionId)}/allocations/stats`).then(r => r.json()),
+                fetch(`/api/v1/connections/${encodeURIComponent(connectionId)}/allocations/top`).then(r => r.json()),
+                fetch(`/api/v1/connections/${encodeURIComponent(connectionId)}/allocations/recent`).then(r => r.json())
+            ])
+            .then(([stats, top, recent]) => {
+                if (stats.success) renderStats(stats.data);
+                if (top.success) renderTopAllocations(top.data);
+                if (recent.success) renderRecent(recent.data);
+            })
+            .catch(err => {
+                console.error('Failed to load allocations:', err);
+            });
+        }
+
+        function renderStats(data) {
+            document.getElementById('allocationRate').textContent = formatBytes(data.rate || 0) + '/s';
+            document.getElementById('totalAllocated').textContent = formatBytes(data.total || 0);
+            document.getElementById('eventCount').textContent = (data.count || 0).toString().replace(/\B(?=(\d{3})+(?!\d))/g, ',');
+        }
+
+        function renderTopAllocations(data) {
+            const items = data.top || [];
+            const ctx = document.getElementById('topAllocChart').getContext('2d');
+            if (topAllocChart) topAllocChart.destroy();
+
+            topAllocChart = new Chart(ctx, {
+                type: 'bar',
+                data: {
+                    labels: items.slice(0, 10).map(i => {
+                        const name = i.type || 'Unknown';
+                        return name.length > 15 ? name.substring(0, 12) + '...' : name;
+                    }),
+                    datasets: [{
+                        label: '大小',
+                        data: items.slice(0, 10).map(i => i.size || 0),
+                        backgroundColor: '#0d6efd',
+                        borderRadius: 4
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: { legend: { display: false } },
+                    scales: {
+                        y: {
+                            beginAtZero: true,
+                            ticks: { callback: v => formatBytes(v) }
+                        }
+                    }
+                }
+            });
+        }
+
+        function renderRecent(data) {
+            const container = document.getElementById('allocationsContainer');
+            const events = data.events || [];
+
+            if (events.length === 0) {
+                container.innerHTML = `
+                    <div class="alert alert-info" style="margin: 0;">
+                        <i class="bi bi-info-circle"></i> 暂无分配事件
+                    </div>
+                `;
+                return;
+            }
+
+            let html = '<table class="table" style="margin: 0;">';
+            html += '<thead><tr><th>时间</th><th>类型</th><th>大小</th><th>堆栈</th></tr></thead>';
+            html += '<tbody>';
+
+            events.forEach(e => {
+                html += `
+                    <tr>
+                        <td>${new Date(e.timestamp).toLocaleTimeString()}</td>
+                        <td><code>${escapeHtml(e.type || 'Unknown')}</code></td>
+                        <td>${formatBytes(e.size || 0)}</td>
+                        <td>${e.stackTrace ? '<button class="btn btn-outline btn-sm" onclick="alert(\'' + escapeHtml(e.stackTrace).replace(/'/g, "\\'") + '\')">查看</button>' : '-'}</td>
+                    </tr>
+                `;
+            });
+
+            html += '</tbody></table>';
+            container.innerHTML = html;
+        }
+
+        function escapeHtml(text) {
+            const div = document.createElement('div');
+            div.textContent = text;
+            return div.innerHTML;
+        }
+    </script>
+</body>
+</html>

@@ -1,0 +1,406 @@
+<!DOCTYPE html>
+<html lang="zh-CN" xmlns:th="http://www.thymeleaf.org">
+<head th:replace="layout :: head"></head>
+<body>
+    <div class="wrapper">
+        <aside th:replace="layout :: sidebar"></aside>
+        <main class="main-content">
+            <header th:replace="layout :: header"></header>
+            <div class="content">
+                <!-- Connection Info -->
+                <div class="card" style="margin-bottom: 20px;">
+                    <div class="card-body">
+                        <div class="d-flex align-items-center gap-3">
+                            <i class="bi bi-info-circle" style="font-size: 1.5rem; color: var(--info-color);"></i>
+                            <div>
+                                <strong>连接:</strong> <span id="connectionName">-</span>
+                                <span class="badge badge-success" id="connectionStatus" style="margin-left: 10px;">在线</span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Controls -->
+                <div class="card" style="margin-bottom: 20px;">
+                    <div class="card-body">
+                        <div class="row g-3">
+                            <div class="col-md-4">
+                                <input type="text" class="form-control" id="searchInput" placeholder="搜索类名...">
+                            </div>
+                            <div class="col-md-3">
+                                <select class="form-select" id="sortBy">
+                                    <option value="size">按大小排序</option>
+                                    <option value="count">按数量排序</option>
+                                    <option value="name">按名称排序</option>
+                                </select>
+                            </div>
+                            <div class="col-md-2">
+                                <select class="form-select" id="limitSelect">
+                                    <option value="50">Top 50</option>
+                                    <option value="100">Top 100</option>
+                                    <option value="200">Top 200</option>
+                                </select>
+                            </div>
+                            <div class="col-md-3 d-flex gap-2">
+                                <button class="btn btn-primary flex-grow-1" id="refreshBtn">
+                                    <i class="bi bi-arrow-repeat"></i> 刷新
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Stats Overview -->
+                <div class="stats-grid" style="margin-bottom: 20px;">
+                    <div class="stat-card">
+                        <div class="stat-icon primary">
+                            <i class="bi bi-database"></i>
+                        </div>
+                        <div class="stat-info">
+                            <h4>总堆大小</h4>
+                            <div class="value" id="totalHeapSize">-</div>
+                        </div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-icon success">
+                            <i class="bi bi-boxes"></i>
+                        </div>
+                        <div class="stat-info">
+                            <h4>对象总数</h4>
+                            <div class="value" id="totalObjects">-</div>
+                        </div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-icon warning">
+                            <i class="bi bi-layers"></i>
+                        </div>
+                        <div class="stat-info">
+                            <h4>类数量</h4>
+                            <div class="value" id="classCount">-</div>
+                        </div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-icon info">
+                            <i class="bi bi-clock"></i>
+                        </div>
+                        <div class="stat-info">
+                            <h4>最后更新</h4>
+                            <div class="value" id="lastUpdate">-</div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Charts Row -->
+                <div class="row" style="margin-bottom: 20px;">
+                    <div class="col-md-6">
+                        <div class="card">
+                            <div class="card-header">
+                                <h3><i class="bi bi-pie-chart"></i> 堆分布 (Top 10)</h3>
+                            </div>
+                            <div class="card-body">
+                                <div class="chart-container">
+                                    <canvas id="pieChart"></canvas>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="col-md-6">
+                        <div class="card">
+                            <div class="card-header">
+                                <h3><i class="bi bi-bar-chart"></i> Top N 类大小</h3>
+                            </div>
+                            <div class="card-body">
+                                <div class="chart-container">
+                                    <canvas id="barChart"></canvas>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Class List -->
+                <div class="card">
+                    <div class="card-header">
+                        <h3><i class="bi bi-list-ul"></i> 类详情</h3>
+                        <span class="badge badge-info" id="filteredCount">0 条结果</span>
+                    </div>
+                    <div class="card-body" style="padding: 0;">
+                        <div id="classListContainer" style="max-height: 600px; overflow-y: auto;">
+                            <div class="loading" style="padding: 40px;">
+                                <div class="spinner"></div>
+                                <span style="margin-left: 15px;">加载中...</span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </main>
+    </div>
+
+    <script th:src="@{/js/memdiag.js}"></script>
+    <script th:fragment="scripts">
+        // Use the global connectionId from layout
+        let connectionId = currentConnectionId;
+        let pieChart = null;
+        let barChart = null;
+        let allClasses = [];
+
+        const chartColors = [
+            '#0d6efd', '#198754', '#ffc107', '#dc3545', '#0dcaf0',
+            '#6f42c1', '#fd7e14', '#20c997', '#e83e8c', '#6610f2'
+        ];
+
+        document.addEventListener('DOMContentLoaded', function() {
+            document.getElementById('connectionName').textContent = connectionId;
+
+            // Wait for Chart.js to be available
+            if (typeof Chart === 'undefined') {
+                // Poll for Chart availability
+                const checkChart = setInterval(function() {
+                    if (typeof Chart !== 'undefined') {
+                        clearInterval(checkChart);
+                        initPage();
+                    }
+                }, 100);
+                // Timeout after 5 seconds
+                setTimeout(function() {
+                    clearInterval(checkChart);
+                    if (typeof Chart === 'undefined') {
+                        showError('Chart.js 加载超时，请刷新页面重试');
+                    }
+                }, 5000);
+            } else {
+                initPage();
+            }
+        });
+
+        function initPage() {
+            loadHeapData();
+
+            document.getElementById('refreshBtn').addEventListener('click', loadHeapData);
+            document.getElementById('searchInput').addEventListener('input', filterClasses);
+            document.getElementById('sortBy').addEventListener('change', filterClasses);
+            document.getElementById('limitSelect').addEventListener('change', loadHeapData);
+        }
+
+        function formatBytes(bytes) {
+            if (bytes === 0) return '0 B';
+            const k = 1024;
+            const sizes = ['B', 'KB', 'MB', 'GB', 'TB'];
+            const i = Math.floor(Math.log(bytes) / Math.log(k));
+            return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
+        }
+
+        function formatNumber(num) {
+            return num.toString().replace(/\B(?=(\d{3})+(?!\d))/g, ',');
+        }
+
+        function loadHeapData() {
+            const limit = document.getElementById('limitSelect').value;
+
+            fetch(`/api/v1/connections/${encodeURIComponent(connectionId)}/histogram?limit=${limit}`)
+                .then(response => response.json())
+                .then(data => {
+                    if (data.success) {
+                        allClasses = data.data.classes || [];
+                        renderStats(data.data);
+                        renderCharts(allClasses);
+                        filterClasses();
+                        document.getElementById('lastUpdate').textContent = new Date().toLocaleTimeString();
+                    } else {
+                        showError(data.error || '加载失败');
+                    }
+                })
+                .catch(err => {
+                    showError('加载失败: ' + err.message);
+                });
+        }
+
+        function renderStats(data) {
+            let totalSize = 0;
+            let totalCount = 0;
+
+            allClasses.forEach(cls => {
+                totalSize += cls.totalSize || 0;
+                totalCount += cls.instanceCount || 0;
+            });
+
+            document.getElementById('totalHeapSize').textContent = formatBytes(totalSize);
+            document.getElementById('totalObjects').textContent = formatNumber(totalCount);
+            document.getElementById('classCount').textContent = formatNumber(allClasses.length);
+        }
+
+        function renderCharts(classes) {
+            const top10 = classes.slice(0, 10);
+            const top20 = classes.slice(0, 20);
+
+            // Pie Chart
+            const pieCtx = document.getElementById('pieChart').getContext('2d');
+            if (pieChart) pieChart.destroy();
+
+            pieChart = new Chart(pieCtx, {
+                type: 'doughnut',
+                data: {
+                    labels: top10.map(c => c.className.substring(c.className.lastIndexOf('.') + 1)),
+                    datasets: [{
+                        data: top10.map(c => c.totalSize),
+                        backgroundColor: chartColors,
+                        borderWidth: 2,
+                        borderColor: '#fff'
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: {
+                        legend: {
+                            position: 'right',
+                            labels: {
+                                boxWidth: 12,
+                                font: { size: 11 }
+                            }
+                        },
+                        tooltip: {
+                            callbacks: {
+                                label: function(context) {
+                                    return context.label + ': ' + formatBytes(context.raw);
+                                }
+                            }
+                        }
+                    }
+                }
+            });
+
+            // Bar Chart
+            const barCtx = document.getElementById('barChart').getContext('2d');
+            if (barChart) barChart.destroy();
+
+            barChart = new Chart(barCtx, {
+                type: 'bar',
+                data: {
+                    labels: top20.map(c => {
+                        const name = c.className.substring(c.className.lastIndexOf('.') + 1);
+                        return name.length > 15 ? name.substring(0, 12) + '...' : name;
+                    }),
+                    datasets: [{
+                        label: '大小',
+                        data: top20.map(c => c.totalSize),
+                        backgroundColor: chartColors[0],
+                        borderRadius: 4
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: {
+                        legend: { display: false },
+                        tooltip: {
+                            callbacks: {
+                                label: function(context) {
+                                    return formatBytes(context.raw);
+                                }
+                            }
+                        }
+                    },
+                    scales: {
+                        y: {
+                            beginAtZero: true,
+                            ticks: {
+                                callback: function(value) {
+                                    return formatBytes(value);
+                                }
+                            }
+                        },
+                        x: {
+                            ticks: {
+                                maxRotation: 45,
+                                minRotation: 45,
+                                font: { size: 10 }
+                            }
+                        }
+                    }
+                }
+            });
+        }
+
+        function filterClasses() {
+            const search = document.getElementById('searchInput').value.toLowerCase();
+            const sortBy = document.getElementById('sortBy').value;
+
+            let filtered = allClasses.filter(cls =>
+                cls.className.toLowerCase().includes(search)
+            );
+
+            filtered.sort((a, b) => {
+                if (sortBy === 'size') return (b.totalSize || 0) - (a.totalSize || 0);
+                if (sortBy === 'count') return (b.instanceCount || 0) - (a.instanceCount || 0);
+                return a.className.localeCompare(b.className);
+            });
+
+            renderClassList(filtered);
+        }
+
+        function renderClassList(classes) {
+            const container = document.getElementById('classListContainer');
+            document.getElementById('filteredCount').textContent = formatNumber(classes.length) + ' 条结果';
+
+            if (classes.length === 0) {
+                container.innerHTML = `
+                    <div class="alert alert-info" style="margin: 20px;">
+                        <i class="bi bi-info-circle"></i> 没有找到匹配的类
+                    </div>
+                `;
+                return;
+            }
+
+            let html = '<table class="table" style="margin: 0;">';
+            html += `
+                <thead style="position: sticky; top: 0; background: white; z-index: 1;">
+                    <tr>
+                        <th style="width: 40%;">类名</th>
+                        <th style="width: 20%;">实例数</th>
+                        <th style="width: 20%;">总大小</th>
+                        <th style="width: 20%;">平均大小</th>
+                    </tr>
+                </thead>
+                <tbody>
+            `;
+
+            classes.forEach((cls, index) => {
+                const avgSize = cls.instanceCount > 0 ? cls.totalSize / cls.instanceCount : 0;
+                const shortName = cls.className.substring(cls.className.lastIndexOf('.') + 1);
+                html += `
+                    <tr>
+                        <td>
+                            <div title="${escapeHtml(cls.className)}" style="font-family: monospace; font-size: 0.85rem;">
+                                ${escapeHtml(shortName)}
+                            </div>
+                        </td>
+                        <td>${formatNumber(cls.instanceCount || 0)}</td>
+                        <td><strong>${formatBytes(cls.totalSize || 0)}</strong></td>
+                        <td>${formatBytes(Math.round(avgSize))}</td>
+                    </tr>
+                `;
+            });
+
+            html += '</tbody></table>';
+            container.innerHTML = html;
+        }
+
+        function showError(message) {
+            const container = document.getElementById('classListContainer');
+            container.innerHTML = `
+                <div class="alert alert-danger" style="margin: 20px;">
+                    <i class="bi bi-exclamation-triangle"></i> ${escapeHtml(message)}
+                </div>
+            `;
+        }
+
+        function escapeHtml(text) {
+            const div = document.createElement('div');
+            div.textContent = text;
+            return div.innerHTML;
+        }
+    </script>
+</body>
+</html>

@@ -1,0 +1,173 @@
+<!DOCTYPE html>
+<html lang="zh-CN" xmlns:th="http://www.thymeleaf.org">
+<head th:replace="layout :: head"></head>
+<body>
+    <div class="wrapper">
+        <aside th:replace="layout :: sidebar"></aside>
+        <main class="main-content">
+            <header th:replace="layout :: header"></header>
+            <div class="content">
+                <!-- Welcome Section -->
+                <div class="alert alert-info" th:if="${connections == null or #lists.isEmpty(connections)}">
+                    <i class="bi bi-info-circle"></i>
+                    <strong>欢迎使用 MemDiag！</strong>
+                    请先创建一个 JVM 连接来开始分析。
+                </div>
+
+                <!-- Quick Connect -->
+                <div class="card" style="margin-bottom: 30px;">
+                    <div class="card-header">
+                        <h3><i class="bi bi-lightning-charge"></i> 快速连接</h3>
+                    </div>
+                    <div class="card-body">
+                        <form id="quickConnectForm" th:action="@{/api/v1/connections/quick}" method="post">
+                            <div class="row g-3">
+                                <div class="col-md-4">
+                                    <label class="form-label">连接名称</label>
+                                    <input type="text" class="form-control" name="name" placeholder="例如：MyApp" required>
+                                </div>
+                                <div class="col-md-4">
+                                    <label class="form-label">目标</label>
+                                    <input type="text" class="form-control" name="target"
+                                           placeholder="PID (如: 12345) 或 Agent (如: localhost:6789)" required>
+                                </div>
+                                <div class="col-md-4 d-flex align-items-end">
+                                    <button type="submit" class="btn btn-primary w-100">
+                                        <i class="bi bi-plug"></i> 连接并分析
+                                    </button>
+                                </div>
+                            </div>
+                        </form>
+                    </div>
+                </div>
+
+                <!-- Stats Overview -->
+                <div class="stats-grid" th:if="${connections != null and not #lists.isEmpty(connections)}">
+                    <div class="stat-card">
+                        <div class="stat-icon primary">
+                            <i class="bi bi-plug"></i>
+                        </div>
+                        <div class="stat-info">
+                            <h4>活动连接</h4>
+                            <div class="value" th:text="${connectionCount} ?: 0">0</div>
+                        </div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-icon success">
+                            <i class="bi bi-check-circle"></i>
+                        </div>
+                        <div class="stat-info">
+                            <h4>健康状态</h4>
+                            <div class="value">良好</div>
+                        </div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-icon warning">
+                            <i class="bi bi-clock-history"></i>
+                        </div>
+                        <div class="stat-info">
+                            <h4>分析次数</h4>
+                            <div class="value">-</div>
+                        </div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-icon info">
+                            <i class="bi bi-box-seam"></i>
+                        </div>
+                        <div class="stat-info">
+                            <h4>快照数量</h4>
+                            <div class="value">-</div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Recent Connections -->
+                <div class="card" th:if="${connections != null and not #lists.isEmpty(connections)}">
+                    <div class="card-header">
+                        <h3><i class="bi bi-clock-history"></i> 最近连接</h3>
+                        <a th:href="@{/connections}" class="btn btn-outline btn-sm">
+                            查看全部 <i class="bi bi-arrow-right"></i>
+                        </a>
+                    </div>
+                    <div class="card-body">
+                        <div class="connection-list">
+                            <div class="connection-card" th:each="conn : ${connections}">
+                                <div class="connection-info">
+                                    <div class="connection-status"
+                                         th:classappend="${conn.online} ? 'online' : 'offline'"></div>
+                                    <div class="connection-details">
+                                        <h4 th:text="${conn.name}">Connection</h4>
+                                        <div class="type">
+                                            <span class="badge"
+                                                  th:classappend="${conn.type == 'AGENT'} ? 'badge-info' : 'badge-secondary'"
+                                                  th:text="${conn.type}">JMX</span>
+                                            <span th:if="${conn.target}" th:text="' · ' + ${conn.target}"></span>
+                                        </div>
+                                    </div>
+                                </div>
+                                <div class="connection-actions">
+                                    <a th:href="@{/analysis/heap/{id}(id=${conn.id})}"
+                                       class="btn btn-primary btn-sm">
+                                        <i class="bi bi-graph-up"></i> 分析
+                                    </a>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Quick Actions -->
+                <div class="card">
+                    <div class="card-header">
+                        <h3><i class="bi bi-star"></i> 快捷操作</h3>
+                    </div>
+                    <div class="card-body">
+                        <div class="row g-3">
+                            <div class="col-md-3">
+                                <a th:href="@{/connections}" class="btn btn-outline w-100" style="padding: 30px;">
+                                    <i class="bi bi-plus-circle" style="font-size: 2rem; display: block; margin-bottom: 10px;"></i>
+                                    创建连接
+                                </a>
+                            </div>
+                            <div class="col-md-3">
+                                <a href="#" class="btn btn-outline w-100" style="padding: 30px; opacity: 0.6;">
+                                    <i class="bi bi-question-circle" style="font-size: 2rem; display: block; margin-bottom: 10px;"></i>
+                                    查看文档
+                                </a>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </main>
+    </div>
+
+    <script th:src="@{/js/memdiag.js}"></script>
+    <script th:fragment="scripts">
+        // Quick connect form handler
+        document.getElementById('quickConnectForm')?.addEventListener('submit', function(e) {
+            e.preventDefault();
+            const formData = new FormData(this);
+            const name = formData.get('name');
+            const target = formData.get('target');
+
+            // Create connection via API
+            fetch('/api/v1/connections/' + name + '?target=' + encodeURIComponent(target), {
+                method: 'POST'
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.status === 'connected') {
+                    // Redirect to heap analysis
+                    window.location.href = '/analysis/heap/' + name;
+                } else {
+                    alert('连接失败：' + (data.error || '未知错误'));
+                }
+            })
+            .catch(err => {
+                alert('连接失败：' + err.message);
+            });
+        });
+    </script>
+</body>
+</html>

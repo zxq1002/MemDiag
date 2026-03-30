@@ -1,0 +1,202 @@
+<!DOCTYPE html>
+<html lang="zh-CN" xmlns:th="http://www.thymeleaf.org">
+<head th:replace="layout :: head"></head>
+<body>
+    <div class="wrapper">
+        <aside th:replace="layout :: sidebar"></aside>
+        <main class="main-content">
+            <header th:replace="layout :: header"></header>
+            <div class="content">
+                <div class="card" style="margin-bottom: 20px;">
+                    <div class="card-body">
+                        <div class="d-flex align-items-center gap-3">
+                            <i class="bi bi-info-circle" style="font-size: 1.5rem; color: var(--info-color);"></i>
+                            <div>
+                                <strong>连接:</strong> <span id="connectionName">-</span>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="card" style="margin-bottom: 20px;">
+                    <div class="card-header">
+                        <h3><i class="bi bi-arrow-left-right"></i> 选择快照</h3>
+                    </div>
+                    <div class="card-body">
+                        <div class="row g-3">
+                            <div class="col-md-5">
+                                <label class="form-label">基线快照</label>
+                                <select class="form-select" id="baselineSelect">
+                                    <option value="">选择基线...</option>
+                                </select>
+                            </div>
+                            <div class="col-md-2 d-flex align-items-end justify-content-center">
+                                <i class="bi bi-arrow-right" style="font-size: 1.5rem; color: var(--secondary-color);"></i>
+                            </div>
+                            <div class="col-md-5">
+                                <label class="form-label">对比快照</label>
+                                <select class="form-select" id="compareSelect">
+                                    <option value="">选择对比...</option>
+                                </select>
+                            </div>
+                        </div>
+                        <div class="mt-3">
+                            <button class="btn btn-primary" id="compareBtn">
+                                <i class="bi bi-bar-chart"></i> 开始对比
+                            </button>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="card" id="diffCard" style="display: none;">
+                    <div class="card-header">
+                        <h3><i class="bi bi-graph-up"></i> 对比结果</h3>
+                    </div>
+                    <div class="card-body" id="diffContainer">
+                    </div>
+                </div>
+            </div>
+        </main>
+    </div>
+
+    <script th:src="@{/js/memdiag.js}"></script>
+    <script th:fragment="scripts">
+        // Use the global connectionId from layout
+        let connectionId = currentConnectionId;
+        let snapshots = [];
+
+        document.addEventListener('DOMContentLoaded', function() {
+            document.getElementById('connectionName').textContent = connectionId;
+            document.getElementById('compareBtn').addEventListener('click', runCompare);
+            loadSnapshots();
+        });
+
+        function formatBytes(bytes) {
+            if (bytes === 0) return '0 B';
+            const k = 1024;
+            const sizes = ['B', 'KB', 'MB', 'GB', 'TB'];
+            const i = Math.floor(Math.log(bytes) / Math.log(k));
+            return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
+        }
+
+        function loadSnapshots() {
+            fetch(`/api/v1/connections/${encodeURIComponent(connectionId)}/snapshots`)
+                .then(response => response.json())
+                .then(data => {
+                    if (data.success) {
+                        snapshots = data.data || [];
+                        populateSelects();
+                    }
+                })
+                .catch(err => console.error('Failed to load snapshots:', err));
+        }
+
+        function populateSelects() {
+            const baseline = document.getElementById('baselineSelect');
+            const compare = document.getElementById('compareSelect');
+
+            const options = snapshots.map(s =>
+                `<option value="${escapeHtml(s.id)}">${escapeHtml(s.name)} (${new Date(s.createdAt).toLocaleString()})</option>`
+            ).join('');
+
+            baseline.innerHTML = '<option value="">选择基线...</option>' + options;
+            compare.innerHTML = '<option value="">选择对比...</option>' + options;
+        }
+
+        function runCompare() {
+            const baselineId = document.getElementById('baselineSelect').value;
+            const compareId = document.getElementById('compareSelect').value;
+
+            if (!baselineId || !compareId) {
+                alert('请选择两个快照进行对比');
+                return;
+            }
+
+            if (baselineId === compareId) {
+                alert('请选择不同的快照');
+                return;
+            }
+
+            document.getElementById('diffCard').style.display = 'block';
+            document.getElementById('diffContainer').innerHTML = `
+                <div class="loading" style="padding: 40px;">
+                    <div class="spinner"></div>
+                    <span style="margin-left: 15px;">对比中...</span>
+                </div>
+            `;
+
+            fetch(`/api/v1/connections/${encodeURIComponent(connectionId)}/diff?baseline=${encodeURIComponent(baselineId)}&compare=${encodeURIComponent(compareId)}`)
+                .then(response => response.json())
+                .then(data => {
+                    if (data.success) {
+                        renderDiff(data.data);
+                    } else {
+                        showError(data.error || '对比失败');
+                    }
+                })
+                .catch(err => {
+                    showError('对比失败: ' + err.message);
+                });
+        }
+
+        function renderDiff(diff) {
+            const container = document.getElementById('diffContainer');
+            const changes = diff.changes || [];
+
+            let html = '<div style="margin-bottom: 20px;">';
+            html += `<strong>总变化:</strong> ${formatBytes(diff.totalSizeChange || 0)}`;
+            html += '</div>';
+
+            if (changes.length === 0) {
+                container.innerHTML = '<div class="alert alert-info">没有检测到显著变化</div>';
+                return;
+            }
+
+            html += '<table class="table" style="margin: 0;">';
+            html += '<thead><tr><th>类名</th><th>大小变化</th><th>数量变化</th><th>趋势</th></tr></thead>';
+            html += '<tbody>';
+
+            changes.forEach(c => {
+                const sizeChange = c.sizeChange || 0;
+                const countChange = c.countChange || 0;
+                const isIncrease = sizeChange > 0;
+                const trendIcon = isIncrease ? 'bi-arrow-up' : 'bi-arrow-down';
+                const trendColor = isIncrease ? '#dc3545' : '#198754';
+
+                html += `
+                    <tr>
+                        <td><code>${escapeHtml(c.className || 'Unknown')}</code></td>
+                        <td style="color: ${isIncrease ? '#dc3545' : '#198754'};">
+                            ${isIncrease ? '+' : ''}${formatBytes(sizeChange)}
+                        </td>
+                        <td style="color: ${countChange > 0 ? '#dc3545' : '#198754'};">
+                            ${countChange > 0 ? '+' : ''}${countChange}
+                        </td>
+                        <td>
+                            <i class="bi ${trendIcon}" style="color: ${trendColor};"></i>
+                        </td>
+                    </tr>
+                `;
+            });
+
+            html += '</tbody></table>';
+            container.innerHTML = html;
+        }
+
+        function showError(message) {
+            const container = document.getElementById('diffContainer');
+            container.innerHTML = `
+                <div class="alert alert-danger" style="margin: 0;">
+                    <i class="bi bi-exclamation-triangle"></i> ${escapeHtml(message)}
+                </div>
+            `;
+        }
+
+        function escapeHtml(text) {
+            const div = document.createElement('div');
+            div.textContent = text;
+            return div.innerHTML;
+        }
+    </script>
+</body>
+</html>

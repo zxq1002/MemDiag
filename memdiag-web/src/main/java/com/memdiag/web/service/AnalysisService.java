@@ -163,15 +163,53 @@ public class AnalysisService {
     }
 
     public NmtSnapshot getNmtSnapshot(String id, boolean detail) {
-        JmxClient client = jmxConnections.get(id);
-        if (client == null) {
-            throw new IllegalArgumentException("No connection found for id: " + id);
-        }
-        JmxNmtAnalyzer analyzer = new JmxNmtAnalyzer(client);
-        if (detail) {
-            return analyzer.getDetailSnapshot();
+        ConnectionType type = connectionTypes.get(id);
+        if (type == ConnectionType.AGENT) {
+            AgentClient client = agentConnections.get(id);
+            if (client == null) {
+                throw new IllegalArgumentException("No agent connection found for id: " + id);
+            }
+            
+            // Get data from Agent
+            JsonObject response = client.getNativeSummary();
+            if (response == null) {
+                return new NmtSnapshot(); // Empty
+            }
+            
+            // Extract data from standard {success: true, data: {...}} wrapper if present
+            JsonObject data = response;
+            if (response.has("success") && response.has("data")) {
+                data = response.getAsJsonObject("data");
+            }
+            
+            // Convert NativeMemorySummary response to NmtSnapshot for consistency
+            NmtSnapshot snapshot = new NmtSnapshot();
+            long totalReserved = data.has("totalVirtual") ? data.get("totalVirtual").getAsLong() : 0;
+            long totalCommitted = data.has("totalResident") ? data.get("totalResident").getAsLong() : 0;
+            snapshot.setTotalReserved(totalReserved);
+            snapshot.setTotalCommitted(totalCommitted);
+            
+            // Map breakdownByCategory to NmtSnapshot categories
+            if (data.has("breakdownByCategory")) {
+                JsonObject breakdown = data.getAsJsonObject("breakdownByCategory");
+                for (String catName : breakdown.keySet()) {
+                    long committed = breakdown.get(catName).getAsLong();
+                    snapshot.addCategory(new com.memdiag.core.nmt.NmtCategory(catName, committed, committed));
+                }
+            }
+            
+            return snapshot;
         } else {
-            return analyzer.getSummarySnapshot();
+            JmxClient client = jmxConnections.get(id);
+            if (client == null) {
+                throw new IllegalArgumentException("No connection found for id: " + id);
+            }
+            JmxNmtAnalyzer analyzer = new JmxNmtAnalyzer(client);
+            if (detail) {
+                return analyzer.getDetailSnapshot();
+            } else {
+                return analyzer.getSummarySnapshot();
+            }
         }
     }
 
