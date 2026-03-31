@@ -155,6 +155,9 @@ echo "【P0 优先级】gc-roots 命令测试"
 echo "----------------------------------------"
 
 test_contains "gc-roots 命令帮助" "memdiag gc-roots -h" "GC Root analysis"
+test_contains "gc-roots 基本功能（JMX模式）" "memdiag gc-roots ${SIM_PID}" "GC ROOT STATISTICS"
+test_contains "gc-roots --stats 选项" "memdiag gc-roots --stats ${SIM_PID}" "Total GC Roots"
+test_contains "gc-roots THREAD_STACK 统计" "memdiag gc-roots ${SIM_PID}" "THREAD_STACK"
 
 # ========== P0: snapshot 命令测试 ==========
 echo ""
@@ -322,11 +325,12 @@ else
 fi
 echo ""
 
-# 测试 5.3-5.5: 验证 Agent 模式命令在 JVMTI 加载失败的情况下仍然工作（优雅降级）
+# 测试 5.3-5.6: 验证 Agent 模式命令在 JVMTI 加载失败的情况下仍然工作（优雅降级）
 echo "验证 Agent 模式命令（JVMTI 优雅降级后仍可用）..."
 test_contains "histogram --agent 选项" "memdiag histogram --agent=localhost:6789 -l 5" "CLASS NAME"
 test_contains "threads --agent 选项" "memdiag threads --agent=localhost:6789 -l 5" "THREAD ANALYSIS"
 test_contains "diagnose --agent 选项" "memdiag diagnose --agent=localhost:6789" "DIAGNOSIS REPORT"
+test_contains "gc-roots --agent 选项" "memdiag gc-roots --agent=localhost:6789" "GC ROOT STATISTICS"
 
 # ========== Phase 6: JVMTI 成功加载功能验证 ==========
 echo ""
@@ -357,6 +361,9 @@ if grep -q "available.*true" /tmp/jvmti_current_check.txt 2>/dev/null || \
     test_contains "JVMTI 增强 - native 详细内存分析" \
         "memdiag native --summary --agent=localhost:6789" \
         "Total Virtual"
+    test_contains "JVMTI 增强 - gc-roots 详细分析" \
+        "memdiag gc-roots --agent=localhost:6789" \
+        "GC ROOT STATISTICS"
 
     # JVMTI 稳定性验证
     info "执行 JVMTI 稳定性验证..."

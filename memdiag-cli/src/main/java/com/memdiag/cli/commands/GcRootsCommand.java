@@ -1,5 +1,6 @@
 package com.memdiag.cli.commands;
 
+import com.memdiag.core.agent.AgentClient;
 import com.memdiag.core.heap.GcRootAnalyzer;
 import com.memdiag.core.heap.GcRootPath;
 import com.memdiag.core.heap.GcRootStats;
@@ -30,31 +31,51 @@ public class GcRootsCommand extends BaseCommand {
     @Override
     public void run() {
         String pidToUse = getPid();
-        if (pidToUse == null || pidToUse.isEmpty()) {
+        if (!isAgentMode() && (pidToUse == null || pidToUse.isEmpty())) {
             System.err.println("Error: PID is required. Use --pid <pid> or provide as parameter.");
             System.err.println();
             System.err.println("Usage:");
             System.err.println("  memdiag gc-roots <pid> [options]");
             System.err.println("  memdiag gc-roots --pid <pid> [options]");
+            System.err.println("  memdiag gc-roots --agent=<host:port> [options]");
             System.exit(1);
         }
 
         try {
-            JmxClient jmxClient = JmxClient.attachToPid(pidToUse);
-            GcRootAnalyzer analyzer = new JmxGcRootAnalyzer(jmxClient);
+            GcRootStats stats;
 
-            if (statsOnly || className == null) {
-                printStats(analyzer);
-            }
+            if (isAgentMode()) {
+                AgentClient client = createAgentClient();
 
-            if (className != null) {
-                printGcRoots(analyzer);
+                // Start GC Root tracking if needed
+                client.startGcRootTracking();
+
+                stats = client.getGcRootStats();
+                if (stats == null) {
+                    System.err.println("Failed to get GC Root stats from agent");
+                    return;
+                }
+                if (statsOnly || className == null) {
+                    printStats(stats);
+                }
+
+                // Stop tracking
+                client.stopGcRootTracking();
+            } else {
+                JmxClient jmxClient = JmxClient.attachToPid(pidToUse);
+                GcRootAnalyzer analyzer = new JmxGcRootAnalyzer(jmxClient);
+                if (statsOnly || className == null) {
+                    printStats(analyzer);
+                }
+                if (className != null) {
+                    printGcRoots(analyzer);
+                }
             }
         } catch (Exception e) {
             System.err.println("Error performing GC Root analysis: " + e.getMessage());
             System.err.println();
             System.err.println("Note: GC Root analysis requires:");
-            System.err.println("  1. The target JVM must be accessible via JMX");
+            System.err.println("  1. The target JVM must be accessible via JMX or agent");
             System.err.println("  2. Full GC Root traversal requires JVMTI agent (coming soon)");
             System.err.println("  3. For now, only basic statistics are available");
             System.exit(1);
@@ -62,10 +83,12 @@ public class GcRootsCommand extends BaseCommand {
     }
 
     private void printStats(GcRootAnalyzer analyzer) {
+        printStats(analyzer.getGcRootStats());
+    }
+
+    private void printStats(GcRootStats stats) {
         System.out.println("GC ROOT STATISTICS");
         System.out.println("==========================================================================");
-
-        GcRootStats stats = analyzer.getGcRootStats();
 
         System.out.printf("Total GC Roots: %,d%n", stats.getTotalRoots());
         System.out.println();

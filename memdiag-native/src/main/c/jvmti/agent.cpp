@@ -1,6 +1,7 @@
 #include "agent.h"
 #include "class_transformer.h"
 #include "allocation_tracker.h"
+#include "gc_root_tracker.h"
 #include <cstring>
 #include <cstdlib>
 
@@ -75,6 +76,7 @@ JNIEXPORT void JNICALL Agent_OnUnload(JavaVM* vm) {
     // Clean up allocations
     delete g_state->class_transformer;
     delete g_state->allocation_tracker;
+    delete g_state->gc_root_tracker;
     delete g_state;
     g_state = nullptr;
 }
@@ -109,6 +111,7 @@ static jint initialize_agent(JavaVM* vm, char* options, bool is_attach, size_t s
     // Initialize components
     g_state->class_transformer = new ClassTransformer(g_state->jvmti);
     g_state->allocation_tracker = new AllocationTracker(sampling_rate);
+    g_state->gc_root_tracker = new GcRootTracker(g_state->jvmti);
 
     // Set JVMTI callbacks
     jvmtiEventCallbacks callbacks;
@@ -446,6 +449,63 @@ JNIEXPORT void JNICALL Java_com_memdiag_agent_jvmti_JVMTIEventBridge_registerCal
     }
     g_bridge_class = (jclass)env->NewGlobalRef(cls);
     g_on_native_alloc_method = env->GetStaticMethodID(g_bridge_class, "onNativeAllocation", "(JLjava/lang/String;)V");
+}
+
+JNIEXPORT jobject JNICALL Java_com_memdiag_nativeimpl_JVMTINativeAnalyzer_getGcRootStats0(
+    JNIEnv* env, jclass cls) {
+
+    if (g_state == nullptr || g_state->gc_root_tracker == nullptr) {
+        return nullptr;
+    }
+
+    auto stats = g_state->gc_root_tracker->getGcRootStats();
+
+    // 创建 HashMap
+    jclass hash_map_class = env->FindClass("java/util/HashMap");
+    jmethodID hash_map_init = env->GetMethodID(hash_map_class, "<init>", "()V");
+    jmethodID hash_map_put = env->GetMethodID(hash_map_class, "put",
+        "(Ljava/lang/Object;Ljava/lang/Object;)Ljava/lang/Object;");
+
+    jobject hash_map = env->NewObject(hash_map_class, hash_map_init);
+
+    // 填充数据
+    for (const auto& pair : stats) {
+        jstring key = env->NewStringUTF(
+            (pair.first == GcRootType::SYSTEM_CLASS) ? "SYSTEM_CLASS" :
+            (pair.first == GcRootType::JNI_LOCAL) ? "JNI_LOCAL" :
+            (pair.first == GcRootType::JNI_GLOBAL) ? "JNI_GLOBAL" :
+            (pair.first == GcRootType::STATIC_FIELD) ? "STATIC_FIELD" :
+            (pair.first == GcRootType::THREAD_STACK) ? "THREAD_STACK" :
+            (pair.first == GcRootType::MONITOR) ? "MONITOR" : "OTHER");
+        jlong value = pair.second;
+        jclass long_class = env->FindClass("java/lang/Long");
+        jmethodID long_init = env->GetMethodID(long_class, "<init>", "(J)V");
+        jobject long_obj = env->NewObject(long_class, long_init, value);
+        env->CallObjectMethod(hash_map, hash_map_put, key, long_obj);
+    }
+
+    return hash_map;
+}
+
+JNIEXPORT jboolean JNICALL Java_com_memdiag_nativeimpl_JVMTINativeAnalyzer_startGcRootTracking0(
+    JNIEnv* env, jclass cls) {
+
+    if (g_state == nullptr || g_state->gc_root_tracker == nullptr) {
+        return JNI_FALSE;
+    }
+
+    return g_state->gc_root_tracker->startTracking() ? JNI_TRUE : JNI_FALSE;
+}
+
+JNIEXPORT jboolean JNICALL Java_com_memdiag_nativeimpl_JVMTINativeAnalyzer_stopGcRootTracking0(
+    JNIEnv* env, jclass cls) {
+
+    if (g_state == nullptr || g_state->gc_root_tracker == nullptr) {
+        return JNI_FALSE;
+    }
+
+    g_state->gc_root_tracker->stopTracking();
+    return JNI_TRUE;
 }
 
 } // extern "C"

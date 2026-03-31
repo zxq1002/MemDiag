@@ -12,6 +12,7 @@
 // Forward declarations
 class ClassTransformer;
 class AllocationTracker;
+class GcRootTracker;
 
 struct GlobalState {
     JavaVM* jvm;
@@ -25,6 +26,7 @@ struct GlobalState {
 
     ClassTransformer* class_transformer;
     AllocationTracker* allocation_tracker;
+    GcRootTracker* gc_root_tracker;
 
     // Configuration
     size_t sampling_rate;
@@ -38,6 +40,7 @@ struct GlobalState {
           initialized(false), tracking_enabled(false),
           bytecode_transform_in_progress(false),
           class_transformer(nullptr), allocation_tracker(nullptr),
+          gc_root_tracker(nullptr),
           sampling_rate(100000) {}
 };
 

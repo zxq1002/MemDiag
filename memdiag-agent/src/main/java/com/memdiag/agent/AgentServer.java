@@ -6,10 +6,13 @@ import com.memdiag.agent.collect.StatsAggregator;
 import com.memdiag.agent.instrument.InstrumentManager;
 import com.memdiag.agent.instrument.MethodMonitorTransformer;
 import com.memdiag.agent.jvmti.AgentJVMTILoader;
+import com.memdiag.agent.jvmti.GcRootTracker;
 import com.memdiag.core.diagnose.DiagnosisEngine;
 import com.memdiag.core.diagnose.DiagnosisResult;
 import com.memdiag.core.diagnose.RuleRegistry;
 import com.memdiag.core.heap.ClassStats;
+import com.memdiag.core.heap.GcRootStats;
+import com.memdiag.core.heap.GcRootType;
 import com.memdiag.core.heap.HeapHistogram;
 import com.memdiag.core.nativeapi.MemoryRegion;
 import com.memdiag.core.nativeapi.NativeDiagnosis;
@@ -89,6 +92,7 @@ public class AgentServer {
         server.createContext("/api/v1/histogram", new HeapHistogramHandler());
         server.createContext("/api/v1/threads", new ThreadsHandler());
         server.createContext("/api/v1/diagnose", new DiagnoseHandler());
+        server.createContext("/api/v1/gc-roots/stats", new GcRootsStatsHandler());
         server.createContext("/api/v1/snapshot", new SimpleHandler("snapshot"));
         server.createContext("/api/v1/detach", new DetachHandler());
 
@@ -113,6 +117,9 @@ public class AgentServer {
 
         // New Phase 4 endpoints - JVMTI
         server.createContext("/api/v1/jvmti/status", new JVMTIStatusHandler());
+        server.createContext("/api/v1/gc-roots/stats", new GcRootsStatsHandler());
+        server.createContext("/api/v1/gc-roots/track/start", new StartGcRootTrackingHandler());
+        server.createContext("/api/v1/gc-roots/track/stop", new StopGcRootTrackingHandler());
 
         // New Phase 3 endpoints - method monitoring
         server.createContext("/api/v1/methods/stats", new MethodsStatsHandler());
@@ -936,6 +943,71 @@ public class AgentServer {
             result.summary(summary);
             issues.forEach(result::addIssue);
             return result.build();
+        }
+    }
+
+    private class GcRootsStatsHandler implements HttpHandler {
+        @Override
+        public void handle(HttpExchange exchange) throws IOException {
+            try {
+                GcRootTracker tracker = GcRootTracker.getInstance();
+                GcRootStats stats = tracker.getGcRootStats();
+
+                // Convert to map for simple JSON serialization
+                Map<String, Object> result = new HashMap<>();
+                Map<String, Long> countsByType = new HashMap<>();
+                for (GcRootType type : GcRootType.values()) {
+                    countsByType.put(type.name(), stats.getCount(type));
+                }
+                result.put("countsByType", countsByType);
+                result.put("totalRoots", stats.getTotalRoots());
+                result.put("jvmtiAvailable", tracker.isAvailable());
+                sendJson(exchange, toJson(result), 200);
+            } catch (Exception e) {
+                sendError(exchange, e.getMessage(), 500);
+            }
+        }
+    }
+
+    private class StartGcRootTrackingHandler implements HttpHandler {
+        @Override
+        public void handle(HttpExchange exchange) throws IOException {
+            if (!"POST".equals(exchange.getRequestMethod())) {
+                sendError(exchange, "Method not allowed", 405);
+                return;
+            }
+
+            try {
+                GcRootTracker tracker = GcRootTracker.getInstance();
+                boolean success = tracker.startTracking();
+                Map<String, Object> result = new HashMap<>();
+                result.put("success", success);
+                result.put("message", success ? "GC Root tracking started" : "Failed to start GC Root tracking");
+                sendSuccess(exchange, result);
+            } catch (Exception e) {
+                sendError(exchange, e.getMessage(), 500);
+            }
+        }
+    }
+
+    private class StopGcRootTrackingHandler implements HttpHandler {
+        @Override
+        public void handle(HttpExchange exchange) throws IOException {
+            if (!"POST".equals(exchange.getRequestMethod())) {
+                sendError(exchange, "Method not allowed", 405);
+                return;
+            }
+
+            try {
+                GcRootTracker tracker = GcRootTracker.getInstance();
+                boolean success = tracker.stopTracking();
+                Map<String, Object> result = new HashMap<>();
+                result.put("success", success);
+                result.put("message", success ? "GC Root tracking stopped" : "Failed to stop GC Root tracking");
+                sendSuccess(exchange, result);
+            } catch (Exception e) {
+                sendError(exchange, e.getMessage(), 500);
+            }
         }
     }
 

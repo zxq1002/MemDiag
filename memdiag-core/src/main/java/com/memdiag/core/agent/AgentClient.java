@@ -12,6 +12,8 @@ import com.google.gson.JsonPrimitive;
 import com.google.gson.JsonSerializationContext;
 import com.google.gson.JsonSerializer;
 import com.memdiag.core.diagnose.DiagnosisResult;
+import com.memdiag.core.heap.GcRootStats;
+import com.memdiag.core.heap.GcRootType;
 import com.memdiag.core.heap.HeapHistogram;
 import com.memdiag.core.thread.ThreadDump;
 import com.memdiag.core.thread.ThreadStats;
@@ -662,6 +664,96 @@ public class AgentClient {
             }
         }
         return builder.build();
+    }
+
+    /**
+     * Start GC Root tracking on the agent.
+     *
+     * @return true if tracking was started successfully
+     */
+    public boolean startGcRootTracking() {
+        String raw = postRaw("/api/v1/gc-roots/track/start", "");
+        if (raw == null) {
+            return false;
+        }
+        try {
+            JsonObject json = JsonParser.parseString(raw).getAsJsonObject();
+            if (json.has("success") && json.has("data")) {
+                JsonObject data = json.getAsJsonObject("data");
+                return data.has("success") && data.get("success").getAsBoolean();
+            }
+            return false;
+        } catch (Exception e) {
+            return false;
+        }
+    }
+
+    /**
+     * Stop GC Root tracking on the agent.
+     *
+     * @return true if tracking was stopped successfully
+     */
+    public boolean stopGcRootTracking() {
+        String raw = postRaw("/api/v1/gc-roots/track/stop", "");
+        if (raw == null) {
+            return false;
+        }
+        try {
+            JsonObject json = JsonParser.parseString(raw).getAsJsonObject();
+            if (json.has("success") && json.has("data")) {
+                JsonObject data = json.getAsJsonObject("data");
+                return data.has("success") && data.get("success").getAsBoolean();
+            }
+            return false;
+        } catch (Exception e) {
+            return false;
+        }
+    }
+
+    /**
+     * Get GC Root statistics from agent.
+     *
+     * @return GcRootStats, or null if request failed
+     */
+    public GcRootStats getGcRootStats() {
+        String raw = getRaw("/api/v1/gc-roots/stats");
+        if (raw == null) {
+            return null;
+        }
+        try {
+            // Try parsing as wrapped format first {success: true, data: {...}}
+            JsonObject json = JsonParser.parseString(raw).getAsJsonObject();
+            if (json.has("success") && json.has("data")) {
+                JsonElement data = json.get("data");
+                return parseGcRootStatsFromMap(data);
+            }
+            // Fall back to direct format
+            return parseGcRootStatsFromMap(json);
+        } catch (Exception e) {
+            return null;
+        }
+    }
+
+    /**
+     * Parse GcRootStats from a JSON object.
+     */
+    private GcRootStats parseGcRootStatsFromMap(JsonElement data) {
+        if (data.isJsonObject()) {
+            JsonObject obj = data.getAsJsonObject();
+            java.util.Map<GcRootType, Long> countsByType = new java.util.EnumMap<>(GcRootType.class);
+            if (obj.has("countsByType") && obj.get("countsByType").isJsonObject()) {
+                JsonObject countsObj = obj.get("countsByType").getAsJsonObject();
+                for (GcRootType type : GcRootType.values()) {
+                    if (countsObj.has(type.name())) {
+                        countsByType.put(type, countsObj.get(type.name()).getAsLong());
+                    } else {
+                        countsByType.put(type, 0L);
+                    }
+                }
+            }
+            return new GcRootStats(countsByType);
+        }
+        return new GcRootStats();
     }
 
 }

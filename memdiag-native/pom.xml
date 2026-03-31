@@ -71,6 +71,7 @@
                                             ${project.basedir}/src/main/c/jvmti/agent.cpp
                                             ${project.basedir}/src/main/c/jvmti/class_transformer.cpp
                                             ${project.basedir}/src/main/c/jvmti/allocation_tracker.cpp
+                                            ${project.basedir}/src/main/c/jvmti/gc_root_tracker.cpp
                                             ${project.basedir}/src/main/c/linux/proc_parser.cpp
                                             -lpthread -ldl
                                         </argument>
