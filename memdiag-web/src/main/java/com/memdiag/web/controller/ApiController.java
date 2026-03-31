@@ -161,22 +161,22 @@ public class ApiController {
             JsonObject result = new JsonObject();
             result.addProperty("success", true);
             result.addProperty("timestamp", System.currentTimeMillis());
-            
+
             JsonObject data = new JsonObject();
             data.addProperty("totalReserved", snapshot.getTotalReserved());
             data.addProperty("totalCommitted", snapshot.getTotalCommitted());
-            
+
             com.google.gson.JsonArray categories = new com.google.gson.JsonArray();
-            for (var category : snapshot.getCategories()) {
+            for (com.memdiag.core.nmt.NmtMemoryUsage usage : snapshot.getUsages()) {
                 JsonObject catObj = new JsonObject();
-                catObj.addProperty("name", category.getName());
-                catObj.addProperty("reserved", category.getReserved());
-                catObj.addProperty("committed", category.getCommitted());
+                catObj.addProperty("name", usage.getCategory().getDisplayName());
+                catObj.addProperty("reserved", usage.getReserved());
+                catObj.addProperty("committed", usage.getCommitted());
                 categories.add(catObj);
             }
             data.add("categories", categories);
             data.addProperty("raw", snapshot.toString()); // Keep raw for debugging
-            
+
             result.add("data", data);
             return ResponseEntity.ok(gson.toJson(result));
         } catch (Exception e) {
