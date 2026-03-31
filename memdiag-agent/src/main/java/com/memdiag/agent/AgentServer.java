@@ -951,6 +951,8 @@ public class AgentServer {
         public void handle(HttpExchange exchange) throws IOException {
             try {
                 GcRootTracker tracker = GcRootTracker.getInstance();
+                // 确保 tracking 已启动
+                tracker.startTracking();
                 GcRootStats stats = tracker.getGcRootStats();
 
                 // Convert to map for simple JSON serialization

@@ -42,6 +42,7 @@ g++ -std=c++17 -fPIC -shared \
     memdiag-native/src/main/c/jvmti/agent.cpp \
     memdiag-native/src/main/c/jvmti/class_transformer.cpp \
     memdiag-native/src/main/c/jvmti/allocation_tracker.cpp \
+    memdiag-native/src/main/c/jvmti/gc_root_tracker.cpp \
     memdiag-native/src/main/c/linux/proc_parser.cpp \
     memdiag-native/src/main/c/shared/symbol_cache.cpp \
     -lpthread -ldl
