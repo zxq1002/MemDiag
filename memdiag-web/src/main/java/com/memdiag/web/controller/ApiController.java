@@ -1,6 +1,7 @@
 package com.memdiag.web.controller;
 
 import com.google.gson.JsonObject;
+import com.google.gson.JsonParser;
 import com.google.gson.Gson;
 import com.memdiag.core.diagnose.DiagnosisResult;
 import com.memdiag.core.diagnose.Issue;
@@ -501,6 +502,66 @@ public class ApiController {
             result.addProperty("success", true);
             result.addProperty("timestamp", System.currentTimeMillis());
             result.add("data", status);
+            return ResponseEntity.ok(gson.toJson(result));
+        } catch (Exception e) {
+            return ResponseEntity.badRequest().body(gson.toJson(errorResponse(e.getMessage())));
+        }
+    }
+
+    // ========== GC Roots API ==========
+
+    @GetMapping({"/gc-roots/stats/{id}", "/connections/{id}/gc-roots/stats"})
+    public ResponseEntity<String> getGcRootStats(@PathVariable String id) {
+        try {
+            com.memdiag.core.heap.GcRootStats stats = analysisService.getGcRootStats(id);
+            JsonObject result = new JsonObject();
+            result.addProperty("success", true);
+            result.addProperty("timestamp", System.currentTimeMillis());
+
+            JsonObject data = new JsonObject();
+            data.addProperty("totalRoots", stats.getTotalRoots());
+
+            JsonObject countsByType = new JsonObject();
+            for (com.memdiag.core.heap.GcRootType type : com.memdiag.core.heap.GcRootType.values()) {
+                countsByType.addProperty(type.name(), stats.getCount(type));
+            }
+            data.add("countsByType", countsByType);
+
+            result.add("data", data);
+            return ResponseEntity.ok(gson.toJson(result));
+        } catch (Exception e) {
+            return ResponseEntity.badRequest().body(gson.toJson(errorResponse(e.getMessage())));
+        }
+    }
+
+    @PostMapping({"/gc-roots/track/start/{id}", "/connections/{id}/gc-roots/track/start"})
+    public ResponseEntity<String> startGcRootTracking(@PathVariable String id) {
+        try {
+            boolean success = analysisService.startGcRootTracking(id);
+            JsonObject result = new JsonObject();
+            result.addProperty("success", true);
+            result.addProperty("timestamp", System.currentTimeMillis());
+
+            JsonObject data = new JsonObject();
+            data.addProperty("success", success);
+            result.add("data", data);
+            return ResponseEntity.ok(gson.toJson(result));
+        } catch (Exception e) {
+            return ResponseEntity.badRequest().body(gson.toJson(errorResponse(e.getMessage())));
+        }
+    }
+
+    @PostMapping({"/gc-roots/track/stop/{id}", "/connections/{id}/gc-roots/track/stop"})
+    public ResponseEntity<String> stopGcRootTracking(@PathVariable String id) {
+        try {
+            boolean success = analysisService.stopGcRootTracking(id);
+            JsonObject result = new JsonObject();
+            result.addProperty("success", true);
+            result.addProperty("timestamp", System.currentTimeMillis());
+
+            JsonObject data = new JsonObject();
+            data.addProperty("success", success);
+            result.add("data", data);
             return ResponseEntity.ok(gson.toJson(result));
         } catch (Exception e) {
             return ResponseEntity.badRequest().body(gson.toJson(errorResponse(e.getMessage())));
