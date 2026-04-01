@@ -1,0 +1,318 @@
+<!DOCTYPE html>
+<html lang="zh-CN" xmlns:th="http://www.thymeleaf.org">
+<head th:replace="layout :: head"></head>
+<body>
+    <div class="wrapper">
+        <aside th:replace="layout :: sidebar"></aside>
+        <main class="main-content">
+            <header th:replace="layout :: header"></header>
+            <div class="content">
+                <div class="card" style="margin-bottom: 20px;">
+                    <div class="card-body">
+                        <div class="d-flex align-items-center gap-3">
+                            <i class="bi bi-info-circle" style="font-size: 1.5rem; color: var(--info-color);"></i>
+                            <div>
+                                <strong>连接:</strong> <span id="connectionName">-</span>
+                            </div>
+                            <div class="ms-auto">
+                                <button class="btn btn-primary" id="refreshBtn">
+                                    <i class="bi bi-arrow-repeat"></i> 刷新
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="stats-grid" style="margin-bottom: 20px;">
+                    <div class="stat-card">
+                        <div class="stat-icon primary">
+                            <i class="bi bi-diagram-3"></i>
+                        </div>
+                        <div class="stat-info">
+                            <h4>GC Root 总数</h4>
+                            <div class="value" id="totalRoots">-</div>
+                        </div>
+                    </div>
+                    <div class="stat-card">
+                        <div class="stat-icon success">
+                            <i class="bi bi-play-circle"></i>
+                        </div>
+                        <div class="stat-info">
+                            <h4>追踪状态</h4>
+                            <div class="value" id="trackingStatus">-</div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="card" style="margin-bottom: 20px;">
+                    <div class="card-header">
+                        <h3><i class="bi bi-sliders"></i> 追踪控制</h3>
+                    </div>
+                    <div class="card-body">
+                        <div class="row g-3">
+                            <div class="col-md-6">
+                                <button class="btn btn-success" id="startTrackingBtn">
+                                    <i class="bi bi-play-circle"></i> 启动追踪
+                                </button>
+                            </div>
+                            <div class="col-md-6">
+                                <button class="btn btn-danger" id="stopTrackingBtn">
+                                    <i class="bi bi-stop-circle"></i> 停止追踪
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="row" style="margin-bottom: 20px;">
+                    <div class="col-md-6">
+                        <div class="card">
+                            <div class="card-header">
+                                <h3><i class="bi bi-pie-chart"></i> GC Root 类型分布</h3>
+                            </div>
+                            <div class="card-body">
+                                <div class="chart-container" style="height: 250px;">
+                                    <canvas id="gcRootPieChart"></canvas>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="col-md-6">
+                        <div class="card">
+                            <div class="card-header">
+                                <h3><i class="bi bi-bar-chart"></i> GC Root 类型数量</h3>
+                            </div>
+                            <div class="card-body">
+                                <div class="chart-container" style="height: 250px;">
+                                    <canvas id="gcRootBarChart"></canvas>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="card">
+                    <div class="card-header">
+                        <h3><i class="bi bi-list-ul"></i> GC Root 类型详情</h3>
+                    </div>
+                    <div class="card-body" id="gcRootsContainer">
+                        <div class="alert alert-info" style="margin: 0;">
+                            <i class="bi bi-info-circle"></i> 加载中...
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </main>
+    </div>
+
+    <script th:src="@{/js/memdiag.js}"></script>
+    <script th:fragment="scripts">
+        let connectionId = currentConnectionId;
+        let pieChart = null;
+        let barChart = null;
+
+        const chartColors = [
+            '#0d6efd', '#198754', '#ffc107', '#dc3545', '#0dcaf0',
+            '#6f42c1', '#fd7e14', '#20c997', '#e83e8c', '#6610f2'
+        ];
+
+        document.addEventListener('DOMContentLoaded', function() {
+            document.getElementById('connectionName').textContent = connectionId;
+
+            if (typeof Chart === 'undefined') {
+                const checkChart = setInterval(function() {
+                    if (typeof Chart !== 'undefined') {
+                        clearInterval(checkChart);
+                        initPage();
+                    }
+                }, 100);
+                setTimeout(function() {
+                    clearInterval(checkChart);
+                    if (typeof Chart === 'undefined') {
+                        showError('Chart.js 加载超时，请刷新页面重试');
+                    }
+                }, 5000);
+            } else {
+                initPage();
+            }
+        });
+
+        function initPage() {
+            loadGcRoots();
+            document.getElementById('refreshBtn').addEventListener('click', loadGcRoots);
+            document.getElementById('startTrackingBtn').addEventListener('click', startTracking);
+            document.getElementById('stopTrackingBtn').addEventListener('click', stopTracking);
+        }
+
+        function formatNumber(num) {
+            return num.toString().replace(/\B(?=(\d{3})+(?!\d))/g, ',');
+        }
+
+        function loadGcRoots() {
+            fetch(`/api/v1/connections/${encodeURIComponent(connectionId)}/gc-roots/stats`)
+                .then(response => response.json())
+                .then(data => {
+                    if (data.success) {
+                        renderStats(data.data);
+                        renderCharts(data.data.countsByType);
+                        renderGcRootList(data.data.countsByType);
+                    } else {
+                        showError(data.error || '加载失败');
+                    }
+                })
+                .catch(err => {
+                    showError('加载失败: ' + err.message);
+                });
+        }
+
+        function renderStats(data) {
+            document.getElementById('totalRoots').textContent = formatNumber(data.totalRoots || 0);
+            document.getElementById('trackingStatus').textContent = '就绪';
+        }
+
+        function renderCharts(countsByType) {
+            const types = Object.entries(countsByType || {})
+                .filter(([type, count]) => count > 0)
+                .sort((a, b) => b[1] - a[1]);
+
+            const pieCtx = document.getElementById('gcRootPieChart').getContext('2d');
+            if (pieChart) pieChart.destroy();
+
+            pieChart = new Chart(pieCtx, {
+                type: 'doughnut',
+                data: {
+                    labels: types.map(([type]) => type),
+                    datasets: [{
+                        data: types.map(([, count]) => count),
+                        backgroundColor: chartColors,
+                        borderWidth: 2,
+                        borderColor: '#fff'
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: {
+                        legend: {
+                            position: 'right',
+                            labels: { boxWidth: 12, font: { size: 11 } }
+                        }
+                    }
+                }
+            });
+
+            const barCtx = document.getElementById('gcRootBarChart').getContext('2d');
+            if (barChart) barChart.destroy();
+
+            barChart = new Chart(barCtx, {
+                type: 'bar',
+                data: {
+                    labels: types.map(([type]) => type),
+                    datasets: [{
+                        label: '数量',
+                        data: types.map(([, count]) => count),
+                        backgroundColor: chartColors[0],
+                        borderRadius: 4
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: { legend: { display: false } },
+                    scales: {
+                        y: { beginAtZero: true }
+                    }
+                }
+            });
+        }
+
+        function renderGcRootList(countsByType) {
+            const container = document.getElementById('gcRootsContainer');
+            const types = Object.entries(countsByType || {})
+                .filter(([type, count]) => count > 0)
+                .sort((a, b) => b[1] - a[1]);
+
+            if (types.length === 0) {
+                container.innerHTML = `
+                    <div class="alert alert-info" style="margin: 0;">
+                        <i class="bi bi-info-circle"></i> 暂无 GC Root 数据
+                    </div>
+                `;
+                return;
+            }
+
+            let html = '<table class="table" style="margin: 0;">';
+            html += '<thead><tr><th>类型</th><th>数量</th><th>占比</th></tr></thead>';
+            html += '<tbody>';
+
+            const total = types.reduce((sum, [, count]) => sum + count, 0);
+
+            types.forEach(([type, count]) => {
+                const percentage = total > 0 ? ((count / total) * 100).toFixed(1) : 0;
+                html += `
+                    <tr>
+                        <td><code>${escapeHtml(type)}</code></td>
+                        <td>${formatNumber(count)}</td>
+                        <td>${percentage}%</td>
+                    </tr>
+                `;
+            });
+
+            html += '</tbody></table>';
+            container.innerHTML = html;
+        }
+
+        function startTracking() {
+            fetch(`/api/v1/connections/${encodeURIComponent(connectionId)}/gc-roots/track/start`, {
+                method: 'POST'
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.success && data.data.success) {
+                    alert('追踪已启动');
+                    document.getElementById('trackingStatus').textContent = '追踪中';
+                } else {
+                    alert('启动失败: ' + (data.error || '未知错误'));
+                }
+            })
+            .catch(err => {
+                alert('启动失败: ' + err.message);
+            });
+        }
+
+        function stopTracking() {
+            fetch(`/api/v1/connections/${encodeURIComponent(connectionId)}/gc-roots/track/stop`, {
+                method: 'POST'
+            })
+            .then(response => response.json())
+            .then(data => {
+                if (data.success && data.data.success) {
+                    alert('追踪已停止');
+                    document.getElementById('trackingStatus').textContent = '已停止';
+                    loadGcRoots();
+                } else {
+                    alert('停止失败: ' + (data.error || '未知错误'));
+                }
+            })
+            .catch(err => {
+                alert('停止失败: ' + err.message);
+            });
+        }
+
+        function showError(message) {
+            const container = document.getElementById('gcRootsContainer');
+            container.innerHTML = `
+                <div class="alert alert-danger" style="margin: 0;">
+                    <i class="bi bi-exclamation-triangle"></i> ${escapeHtml(message)}
+                </div>
+            `;
+        }
+
+        function escapeHtml(text) {
+            const div = document.createElement('div');
+            div.textContent = text;
+            return div.innerHTML;
+        }
+    </script>
+</body>
+</html>
