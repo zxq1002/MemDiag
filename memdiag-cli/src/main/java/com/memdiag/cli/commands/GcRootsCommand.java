@@ -55,8 +55,13 @@ public class GcRootsCommand extends BaseCommand {
                     System.err.println("Failed to get GC Root stats from agent");
                     return;
                 }
-                if (statsOnly || className == null) {
-                    printStats(stats);
+
+                // Always print stats (default behavior)
+                printStats(stats);
+
+                // Print paths only if --class is provided AND --stats is NOT specified
+                if (className != null && !statsOnly) {
+                    printGcRootsPlaceholder(className);
                 }
 
                 // Stop tracking
@@ -64,10 +69,12 @@ public class GcRootsCommand extends BaseCommand {
             } else {
                 JmxClient jmxClient = JmxClient.attachToPid(pidToUse);
                 GcRootAnalyzer analyzer = new JmxGcRootAnalyzer(jmxClient);
-                if (statsOnly || className == null) {
-                    printStats(analyzer);
-                }
-                if (className != null) {
+
+                // Always print stats (default behavior)
+                printStats(analyzer);
+
+                // Print paths only if --class is provided AND --stats is NOT specified
+                if (className != null && !statsOnly) {
                     printGcRoots(analyzer);
                 }
             }
@@ -149,6 +156,46 @@ public class GcRootsCommand extends BaseCommand {
         System.out.println("  [STATIC_FIELD] Class: 'com.example.MyApp'");
         System.out.println("    ↳ com.example.MyApp.cache");
         System.out.println("      ↳ " + className);
+        System.out.println();
+    }
+
+    private void printGcRootsPlaceholder(String targetClassName) {
+        System.out.println();
+        System.out.println("GC ROOT PATHS");
+        System.out.println("==========================================================================");
+        System.out.printf("Class: %s%n", targetClassName);
+        System.out.printf("Max Depth: %d%n", maxDepth);
+        System.out.printf("Max Paths: %d%n", maxPaths);
+        System.out.println();
+
+        System.out.println("⚠️ Feature Notice:");
+        System.out.println("  Complete GC Root reference chain traversal requires JVMTI agent.");
+        System.out.println("  This feature is coming in a future update.");
+        System.out.println();
+        System.out.println("  For now, you can:");
+        System.out.println("    1. Use --stats to see GC Root type counts");
+        System.out.println("    2. Take a heap dump and analyze with VisualVM/YourKit");
+        System.out.println("    3. Wait for JVMTI-based full GC Root analysis");
+        System.out.println();
+
+        // Placeholder: In the future, this will show actual paths
+        System.out.println("Example of what will be available:");
+        System.out.println("--------------------------------------------------------------------------");
+        printExamplePathForClass(targetClassName);
+    }
+
+    private void printExamplePathForClass(String targetClassName) {
+        System.out.println("Path 1/3 (depth=3):");
+        System.out.println("  [THREAD_STACK] Thread: 'main' (id=1)");
+        System.out.println("    ↳ java.lang.Thread.locals");
+        System.out.println("      ↳ java.util.HashMap.table");
+        System.out.println("        ↳ java.util.HashMap$Node");
+        System.out.println("          ↳ " + targetClassName);
+        System.out.println();
+        System.out.println("Path 2/3 (depth=2):");
+        System.out.println("  [STATIC_FIELD] Class: 'com.example.MyApp'");
+        System.out.println("    ↳ com.example.MyApp.cache");
+        System.out.println("      ↳ " + targetClassName);
         System.out.println();
     }
 }
