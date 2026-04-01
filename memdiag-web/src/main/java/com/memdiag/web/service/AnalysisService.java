@@ -393,4 +393,46 @@ public class AnalysisService {
         }
         return result;
     }
+
+    // ========== GC Roots API ==========
+
+    public com.memdiag.core.heap.GcRootStats getGcRootStats(String id) {
+        ConnectionType type = connectionTypes.get(id);
+        if (type == ConnectionType.AGENT) {
+            AgentClient client = agentConnections.get(id);
+            if (client == null) {
+                throw new IllegalArgumentException("No agent connection found for id: " + id);
+            }
+            return client.getGcRootStats();
+        } else {
+            // JMX mode - not supported yet
+            throw new UnsupportedOperationException("GC Roots analysis requires Agent mode");
+        }
+    }
+
+    public boolean startGcRootTracking(String id) {
+        ConnectionType type = connectionTypes.get(id);
+        if (type == ConnectionType.AGENT) {
+            AgentClient client = agentConnections.get(id);
+            if (client == null) {
+                throw new IllegalArgumentException("No agent connection found for id: " + id);
+            }
+            return client.startGcRootTracking();
+        } else {
+            throw new UnsupportedOperationException("GC Roots tracking requires Agent mode");
+        }
+    }
+
+    public boolean stopGcRootTracking(String id) {
+        ConnectionType type = connectionTypes.get(id);
+        if (type == ConnectionType.AGENT) {
+            AgentClient client = agentConnections.get(id);
+            if (client == null) {
+                throw new IllegalArgumentException("No agent connection found for id: " + id);
+            }
+            return client.stopGcRootTracking();
+        } else {
+            throw new UnsupportedOperationException("GC Roots tracking requires Agent mode");
+        }
+    }
 }
