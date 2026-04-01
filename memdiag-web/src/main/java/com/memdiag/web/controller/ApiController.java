@@ -96,13 +96,17 @@ public class ApiController {
             DiagnosisResult result = analysisService.diagnose(id);
             // Match Frontend expectation for Diagnosis.vue
             JsonObject response = new JsonObject();
+            response.addProperty("success", true);
+            response.addProperty("timestamp", System.currentTimeMillis());
+
+            JsonObject data = new JsonObject();
             com.google.gson.JsonArray issuesArray = new com.google.gson.JsonArray();
             for (Issue issue : result.getIssues()) {
                 JsonObject issueObj = new JsonObject();
                 issueObj.addProperty("title", issue.getTitle());
                 issueObj.addProperty("description", issue.getDescription());
                 issueObj.addProperty("severity", issue.getSeverity().name());
-                
+
                 String recommendation = "";
                 if (issue.getRecommendations() != null && !issue.getRecommendations().isEmpty()) {
                     Recommendation rec = issue.getRecommendations().get(0);
@@ -111,8 +115,10 @@ public class ApiController {
                 issueObj.addProperty("recommendation", recommendation);
                 issuesArray.add(issueObj);
             }
-            response.add("issues", issuesArray);
-            response.addProperty("summary", result.getSummary());
+            data.add("issues", issuesArray);
+            data.addProperty("summary", result.getSummary());
+
+            response.add("data", data);
             return ResponseEntity.ok(gson.toJson(response));
         } catch (Exception e) {
             return ResponseEntity.badRequest().body(gson.toJson(errorResponse(e.getMessage())));
@@ -125,16 +131,20 @@ public class ApiController {
             ThreadDump dump = analysisService.getThreads(id);
             // Match Threads.vue: expect an object with threadStats array
             JsonObject response = new JsonObject();
+            response.addProperty("success", true);
+            response.addProperty("timestamp", System.currentTimeMillis());
+
+            JsonObject data = new JsonObject();
             com.google.gson.JsonArray threadsArray = new com.google.gson.JsonArray();
-            
+
             for (ThreadStats thread : dump.getThreadStats()) {
                 JsonObject threadObj = new JsonObject();
-                threadObj.addProperty("threadId", thread.getThreadId());
-                threadObj.addProperty("threadName", thread.getThreadName());
+                threadObj.addProperty("id", thread.getThreadId());
+                threadObj.addProperty("name", thread.getThreadName());
                 threadObj.addProperty("state", thread.getState() != null ? thread.getState().name() : "UNKNOWN");
                 threadObj.addProperty("blockedCount", thread.getBlockedCount());
                 threadObj.addProperty("waitedCount", thread.getWaitedCount());
-                
+
                 com.google.gson.JsonArray stackArray = new com.google.gson.JsonArray();
                 if (thread.getStackTrace() != null) {
                     for (com.memdiag.core.thread.StackFrame frame : thread.getStackTrace()) {
@@ -150,8 +160,10 @@ public class ApiController {
                 threadObj.add("stackTrace", stackArray);
                 threadsArray.add(threadObj);
             }
-            response.add("threadStats", threadsArray);
-            response.addProperty("timestamp", dump.getTimestamp() != null ? dump.getTimestamp().toString() : null);
+            data.add("threads", threadsArray);
+            data.addProperty("timestamp", dump.getTimestamp() != null ? dump.getTimestamp().toString() : null);
+
+            response.add("data", data);
             return ResponseEntity.ok(gson.toJson(response));
         } catch (Exception e) {
             return ResponseEntity.badRequest().body(gson.toJson(errorResponse(e.getMessage())));
