@@ -104,4 +104,12 @@ public class WebController {
         model.addAttribute("connectionId", id);
         return "agent";
     }
+
+    @GetMapping("/gc-roots/{id}")
+    public String gcRoots(@PathVariable String id, Model model) {
+        model.addAttribute("pageTitle", "GC Roots - MemDiag");
+        model.addAttribute("activePage", "gc-roots");
+        model.addAttribute("connectionId", id);
+        return "gc-roots";
+    }
 }
