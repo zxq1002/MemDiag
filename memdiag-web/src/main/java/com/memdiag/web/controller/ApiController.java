@@ -64,20 +64,25 @@ public class ApiController {
             @RequestParam(defaultValue = "20") int limit) {
         try {
             HeapHistogram histogram = analysisService.getHistogram(id, limit);
-            // Return the raw histogram object fields directly to match Frontend expectations
             JsonObject result = new JsonObject();
-            result.addProperty("totalBytes", histogram.getTotalBytes());
-            result.addProperty("totalObjects", histogram.getTotalObjects());
-            
-            com.google.gson.JsonArray statsArray = new com.google.gson.JsonArray();
+            result.addProperty("success", true);
+            result.addProperty("timestamp", System.currentTimeMillis());
+
+            JsonObject data = new JsonObject();
+            data.addProperty("totalBytes", histogram.getTotalBytes());
+            data.addProperty("totalObjects", histogram.getTotalObjects());
+
+            com.google.gson.JsonArray classesArray = new com.google.gson.JsonArray();
             for (ClassStats entry : histogram.getClassStats()) {
                 JsonObject cls = new JsonObject();
                 cls.addProperty("className", entry.getClassName());
-                cls.addProperty("shallowBytes", entry.getShallowBytes());
-                cls.addProperty("objectCount", entry.getObjectCount());
-                statsArray.add(cls);
+                cls.addProperty("totalSize", entry.getShallowBytes());
+                cls.addProperty("instanceCount", entry.getObjectCount());
+                classesArray.add(cls);
             }
-            result.add("classStats", statsArray);
+            data.add("classes", classesArray);
+
+            result.add("data", data);
             return ResponseEntity.ok(gson.toJson(result));
         } catch (Exception e) {
             return ResponseEntity.badRequest().body(gson.toJson(errorResponse(e.getMessage())));
