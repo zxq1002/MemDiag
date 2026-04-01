@@ -82,6 +82,11 @@
                    >
                     <i class="bi bi-folder-symlink"></i> 方法监控
                 </a>
+                <a th:href="@{/gc-roots/{id}(id=${connectionId} ?: 'current')}"
+                   class="nav-item" th:classappend="${activePage == 'gc-roots'} ? 'active' : ''"
+                   >
+                    <i class="bi bi-diagram-3"></i> GC Roots
+                </a>
                 <a th:href="@{/agent/{id}(id=${connectionId} ?: 'current')}"
                    class="nav-item" th:classappend="${activePage == 'agent'} ? 'active' : ''"
                    >
@@ -149,6 +154,7 @@
             'report': '/report/{id}',
             'allocations': '/allocations/{id}',
             'methods': '/methods/{id}',
+            'gc-roots': '/gc-roots/{id}',
             'agent': '/agent/{id}'
         };
 
