@@ -156,7 +156,7 @@ echo "----------------------------------------"
 
 test_contains "gc-roots 命令帮助" "memdiag gc-roots -h" "GC Root analysis"
 test_contains "gc-roots 基本功能（JMX模式）" "memdiag gc-roots ${SIM_PID}" "GC ROOT STATISTICS"
-test_contains "gc-roots --stats 选项" "memdiag gc-roots --stats ${SIM_PID}" "Total GC Roots"
+test_contains "gc-roots --stats 选项" "memdiag gc-roots --stats ${SIM_PID}" "GC Roots total"
 test_contains "gc-roots THREAD_STACK 统计" "memdiag gc-roots ${SIM_PID}" "THREAD_STACK"
 
 # ========== P0: snapshot 命令测试 ==========

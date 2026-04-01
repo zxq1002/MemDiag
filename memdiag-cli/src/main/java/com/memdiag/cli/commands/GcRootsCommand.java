@@ -56,12 +56,17 @@ public class GcRootsCommand extends BaseCommand {
                     return;
                 }
 
-                // Always print stats (default behavior)
-                printStats(stats);
-
-                // Print paths only if --class is provided AND --stats is NOT specified
-                if (className != null && !statsOnly) {
+                // 参数行为设计:
+                // --stats: 只显示简洁的统计信息
+                // --class: 只显示该类的 GC Root 路径（不显示统计）
+                // 无参数: 显示完整的统计信息 + 使用提示
+                if (statsOnly) {
+                    printStatsCompact(stats);
+                } else if (className != null) {
                     printGcRootsPlaceholder(className);
+                } else {
+                    printStats(stats);
+                    printUsageHint();
                 }
 
                 // Stop tracking
@@ -70,12 +75,17 @@ public class GcRootsCommand extends BaseCommand {
                 JmxClient jmxClient = JmxClient.attachToPid(pidToUse);
                 GcRootAnalyzer analyzer = new JmxGcRootAnalyzer(jmxClient);
 
-                // Always print stats (default behavior)
-                printStats(analyzer);
-
-                // Print paths only if --class is provided AND --stats is NOT specified
-                if (className != null && !statsOnly) {
+                // 参数行为设计:
+                // --stats: 只显示简洁的统计信息
+                // --class: 只显示该类的 GC Root 路径（不显示统计）
+                // 无参数: 显示完整的统计信息 + 使用提示
+                if (statsOnly) {
+                    printStatsCompact(analyzer);
+                } else if (className != null) {
                     printGcRoots(analyzer);
+                } else {
+                    printStats(analyzer);
+                    printUsageHint();
                 }
             }
         } catch (Exception e) {
@@ -115,15 +125,49 @@ public class GcRootsCommand extends BaseCommand {
         System.out.println("      For complete reference chain traversal, wait for future updates.");
     }
 
+    private void printStatsCompact(GcRootAnalyzer analyzer) {
+        printStatsCompact(analyzer.getGcRootStats());
+    }
+
+    private void printStatsCompact(GcRootStats stats) {
+        System.out.printf("%,d GC Roots total", stats.getTotalRoots());
+        boolean first = true;
+        for (GcRootType type : GcRootType.values()) {
+            long count = stats.getCount(type);
+            if (count > 0) {
+                if (first) {
+                    System.out.print(" (");
+                    first = false;
+                } else {
+                    System.out.print(", ");
+                }
+                System.out.printf("%s: %,d", type.name(), count);
+            }
+        }
+        if (!first) {
+            System.out.println(")");
+        } else {
+            System.out.println();
+        }
+    }
+
+    private void printUsageHint() {
+        System.out.println();
+        System.out.println("💡 Usage Tips:");
+        System.out.println("  --stats              Show compact statistics (one line)");
+        System.out.println("  --class=<name>       Show GC root paths for specific class");
+        System.out.println("  --class=<name> --stats  Show only stats for the class");
+        System.out.println();
+    }
+
     private boolean isRootType(GcRootType type) {
         return type != GcRootType.INSTANCE_FIELD;
     }
 
     private void printGcRoots(GcRootAnalyzer analyzer) {
-        System.out.println();
         System.out.println("GC ROOT PATHS");
         System.out.println("==========================================================================");
-        System.out.printf("Class: %s%n", className);
+        System.out.printf("Target Class: %s%n", className);
         System.out.printf("Max Depth: %d%n", maxDepth);
         System.out.printf("Max Paths: %d%n", maxPaths);
         System.out.println();
@@ -133,7 +177,7 @@ public class GcRootsCommand extends BaseCommand {
         System.out.println("  This feature is coming in a future update.");
         System.out.println();
         System.out.println("  For now, you can:");
-        System.out.println("    1. Use --stats to see GC Root type counts");
+        System.out.println("    1. Use without --class to see GC Root type counts");
         System.out.println("    2. Take a heap dump and analyze with VisualVM/YourKit");
         System.out.println("    3. Wait for JVMTI-based full GC Root analysis");
         System.out.println();
@@ -160,10 +204,9 @@ public class GcRootsCommand extends BaseCommand {
     }
 
     private void printGcRootsPlaceholder(String targetClassName) {
-        System.out.println();
         System.out.println("GC ROOT PATHS");
         System.out.println("==========================================================================");
-        System.out.printf("Class: %s%n", targetClassName);
+        System.out.printf("Target Class: %s%n", targetClassName);
         System.out.printf("Max Depth: %d%n", maxDepth);
         System.out.printf("Max Paths: %d%n", maxPaths);
         System.out.println();
@@ -173,7 +216,7 @@ public class GcRootsCommand extends BaseCommand {
         System.out.println("  This feature is coming in a future update.");
         System.out.println();
         System.out.println("  For now, you can:");
-        System.out.println("    1. Use --stats to see GC Root type counts");
+        System.out.println("    1. Use without --class to see GC Root type counts");
         System.out.println("    2. Take a heap dump and analyze with VisualVM/YourKit");
         System.out.println("    3. Wait for JVMTI-based full GC Root analysis");
         System.out.println();
