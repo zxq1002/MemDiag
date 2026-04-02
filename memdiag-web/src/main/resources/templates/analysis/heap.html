@@ -217,13 +217,17 @@
         }
 
         function renderStats(data) {
-            let totalSize = 0;
-            let totalCount = 0;
+            // Use the totals from API response if available, otherwise calculate
+            let totalSize = data.totalBytes || 0;
+            let totalCount = data.totalObjects || 0;
 
-            allClasses.forEach(cls => {
-                totalSize += cls.totalSize || 0;
-                totalCount += cls.instanceCount || 0;
-            });
+            // If totals not in response, calculate from classes
+            if (totalSize === 0 && totalCount === 0) {
+                allClasses.forEach(cls => {
+                    totalSize += cls.totalSize || 0;
+                    totalCount += cls.instanceCount || 0;
+                });
+            }
 
             document.getElementById('totalHeapSize').textContent = formatBytes(totalSize);
             document.getElementById('totalObjects').textContent = formatNumber(totalCount);
