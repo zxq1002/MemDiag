@@ -66,7 +66,11 @@
         let snapshots = [];
 
         document.addEventListener('DOMContentLoaded', function() {
-            document.getElementById('connectionName').textContent = connectionId;
+            // Only set connectionName if connectionId is already available
+            // Otherwise, layout.html's loadConnections() will set it after fetching connections
+            if (connectionId) {
+                document.getElementById('connectionName').textContent = connectionId;
+            }
             document.getElementById('compareBtn').addEventListener('click', runCompare);
             loadSnapshots();
         });

@@ -176,10 +176,16 @@
                         currentConnectionId = Object.keys(data)[0];
                     }
 
-                    // Update current connection name display
+                    // Update current connection name display (header dropdown)
                     const connNameEl = document.getElementById('currentConnectionName');
                     if (connNameEl && currentConnectionId) {
                         connNameEl.textContent = currentConnectionId;
+                    }
+
+                    // Update connection name display in analysis pages (heap, threads, diagnose, etc.)
+                    const pageConnNameEl = document.getElementById('connectionName');
+                    if (pageConnNameEl && currentConnectionId) {
+                        pageConnNameEl.textContent = currentConnectionId;
                     }
 
                     // Populate dropdown
