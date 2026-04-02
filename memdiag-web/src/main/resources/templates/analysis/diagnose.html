@@ -14,6 +14,7 @@
                             <i class="bi bi-info-circle" style="font-size: 1.5rem; color: var(--info-color);"></i>
                             <div>
                                 <strong>连接:</strong> <span id="connectionName" th:text="${connectionId}">-</span>
+                                <span class="badge badge-success" id="connectionStatus" style="margin-left: 10px;">在线</span>
                             </div>
                             <div class="ms-auto">
                                 <button class="btn btn-primary" id="refreshBtn">
@@ -152,14 +153,13 @@
             const container = document.getElementById('diagnosisContainer');
             document.getElementById('diagnosisCard').style.display = 'block';
             document.getElementById('exportCard').style.display = 'none';
-            container.innerHTML = `
-                <div class="loading" style="padding: 40px;">
-                    <div class="spinner"></div>
-                    <span style="margin-left: 15px;">诊断中...</span>
-                </div>
-            `;
+            container.innerHTML =
+                '<div class="loading" style="padding: 40px;">' +
+                    '<div class="spinner"></div>' +
+                    '<span style="margin-left: 15px;">诊断中...</span>' +
+                '</div>';
 
-            fetch(`/api/v1/connections/${encodeURIComponent(connectionId)}/diagnose`)
+            fetch('/api/v1/connections/' + encodeURIComponent(connectionId) + '/diagnose')
                 .then(response => response.json())
                 .then(data => {
                     if (data.success) {
@@ -320,7 +320,7 @@
         function exportReport() {
             const format = document.getElementById('exportFormat').value;
             const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
-            const filename = `memdiag-diagnosis-${connectionId}-${timestamp}.${format}`;
+            const filename = 'memdiag-diagnosis-' + connectionId + '-' + timestamp + '.' + format;
 
             let content, mimeType;
             if (format === 'json') {
@@ -345,51 +345,53 @@
 
         function generateHtmlReport(data) {
             const issues = data.issues || [];
-            return `
-<!DOCTYPE html>
-<html>
-<head>
-    <meta charset="UTF-8">
-    <title>MemDiag 诊断报告 - ${connectionId}</title>
-    <style>
-        body { font-family: -apple-system, BlinkMacSystemFont, sans-serif; max-width: 900px; margin: 0 auto; padding: 40px 20px; }
-        h1 { color: #333; border-bottom: 2px solid #0d6efd; padding-bottom: 10px; }
-        .issue { margin: 20px 0; padding: 15px; border-radius: 8px; border-left: 4px solid; }
-        .critical { background: #fff5f5; border-color: #dc3545; }
-        .warning { background: #fffbf0; border-color: #ffc107; }
-        .info { background: #f0f9ff; border-color: #0dcaf0; }
-        .healthy { background: #f0fff4; border-color: #198754; }
-        .meta { color: #666; font-size: 0.9rem; margin-top: 20px; }
-    </style>
-</head>
-<body>
-    <h1>MemDiag 诊断报告</h1>
-    <p><strong>连接:</strong> ${connectionId}</p>
-    <p><strong>时间:</strong> ${new Date().toLocaleString()}</p>
-    <h2>发现的问题</h2>
-    ${issues.map(i => `
-        <div class="issue ${i.severity}">
-            <h3>${i.title}</h3>
-            <p>${i.description}</p>
-            ${i.recommendation ? `<p><strong>建议:</strong> ${i.recommendation}</p>` : ''}
-        </div>
-    `).join('')}
-    <div class="meta">由 MemDiag 生成</div>
-</body>
-</html>`;
+            var html = '<!DOCTYPE html>\n' +
+'<html>\n' +
+'<head>\n' +
+'    <meta charset="UTF-8">\n' +
+'    <title>MemDiag 诊断报告 - ' + connectionId + '</title>\n' +
+'    <style>\n' +
+'        body { font-family: -apple-system, BlinkMacSystemFont, sans-serif; max-width: 900px; margin: 0 auto; padding: 40px 20px; }\n' +
+'        h1 { color: #333; border-bottom: 2px solid #0d6efd; padding-bottom: 10px; }\n' +
+'        .issue { margin: 20px 0; padding: 15px; border-radius: 8px; border-left: 4px solid; }\n' +
+'        .critical { background: #fff5f5; border-color: #dc3545; }\n' +
+'        .warning { background: #fffbf0; border-color: #ffc107; }\n' +
+'        .info { background: #f0f9ff; border-color: #0dcaf0; }\n' +
+'        .healthy { background: #f0fff4; border-color: #198754; }\n' +
+'        .meta { color: #666; font-size: 0.9rem; margin-top: 20px; }\n' +
+'    </style>\n' +
+'</head>\n' +
+'<body>\n' +
+'    <h1>MemDiag 诊断报告</h1>\n' +
+'    <p><strong>连接:</strong> ' + connectionId + '</p>\n' +
+'    <p><strong>时间:</strong> ' + new Date().toLocaleString() + '</p>\n' +
+'    <h2>发现的问题</h2>\n';
+            issues.forEach(function(i) {
+                html += '        <div class="issue ' + i.severity + '">\n' +
+'            <h3>' + i.title + '</h3>\n' +
+'            <p>' + i.description + '</p>\n';
+                if (i.recommendation) {
+                    html += '            <p><strong>建议:</strong> ' + i.recommendation + '</p>\n';
+                }
+                html += '        </div>\n';
+            });
+            html += '    <div class="meta">由 MemDiag 生成</div>\n' +
+'</body>\n' +
+'</html>';
+            return html;
         }
 
         function generateTextReport(data) {
             const issues = data.issues || [];
-            let report = `MemDiag 诊断报告\n`;
-            report += `连接: ${connectionId}\n`;
-            report += `时间: ${new Date().toLocaleString()}\n`;
-            report += `${'='.repeat(60)}\n\n`;
-            report += `发现的问题:\n\n`;
-            issues.forEach(i => {
-                report += `[${i.severity.toUpperCase()}] ${i.title}\n`;
-                report += `${i.description}\n`;
-                if (i.recommendation) report += `建议: ${i.recommendation}\n`;
+            let report = 'MemDiag 诊断报告\n';
+            report += '连接: ' + connectionId + '\n';
+            report += '时间: ' + new Date().toLocaleString() + '\n';
+            report += '============================================================\n\n';
+            report += '发现的问题:\n\n';
+            issues.forEach(function(i) {
+                report += '[' + i.severity.toUpperCase() + '] ' + i.title + '\n';
+                report += i.description + '\n';
+                if (i.recommendation) report += '建议: ' + i.recommendation + '\n';
                 report += '\n';
             });
             return report;

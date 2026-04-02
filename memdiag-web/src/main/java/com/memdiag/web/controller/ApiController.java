@@ -580,6 +580,77 @@ public class ApiController {
         }
     }
 
+    // ========== Snapshot Management ==========
+
+    @PostMapping({"/snapshot/{id}", "/connections/{id}/snapshot"})
+    public ResponseEntity<String> createSnapshot(
+            @PathVariable String id,
+            @RequestBody(required = false) Map<String, String> body) {
+        try {
+            String name = body != null ? body.get("name") : null;
+            com.memdiag.core.diff.Snapshot snapshot = analysisService.createSnapshot(id, name);
+            JsonObject result = new JsonObject();
+            result.addProperty("success", true);
+            result.addProperty("timestamp", System.currentTimeMillis());
+
+            JsonObject data = new JsonObject();
+            data.addProperty("id", snapshot.getId());
+            data.addProperty("createdAt", snapshot.getTimestamp().toString());
+            data.addProperty("name", snapshot.getId());
+            data.addProperty("size", 0); // Will be populated by file size later
+            result.add("data", data);
+
+            return ResponseEntity.ok(gson.toJson(result));
+        } catch (Exception e) {
+            return ResponseEntity.badRequest().body(gson.toJson(errorResponse(e.getMessage())));
+        }
+    }
+
+    @GetMapping({"/snapshots/{id}", "/connections/{id}/snapshots"})
+    public ResponseEntity<String> listSnapshots(@PathVariable String id) {
+        try {
+            java.util.List<com.memdiag.core.diff.SnapshotManager.SnapshotInfo> snapshots = analysisService.listSnapshots(id);
+            JsonObject result = new JsonObject();
+            result.addProperty("success", true);
+            result.addProperty("timestamp", System.currentTimeMillis());
+
+            com.google.gson.JsonArray dataArray = new com.google.gson.JsonArray();
+            for (com.memdiag.core.diff.SnapshotManager.SnapshotInfo info : snapshots) {
+                JsonObject item = new JsonObject();
+                item.addProperty("id", info.id != null ? info.id : info.filename);
+                item.addProperty("name", info.filename);
+                item.addProperty("createdAt", info.lastModified.toString());
+                item.addProperty("size", info.size);
+                dataArray.add(item);
+            }
+            result.add("data", dataArray);
+
+            return ResponseEntity.ok(gson.toJson(result));
+        } catch (Exception e) {
+            return ResponseEntity.badRequest().body(gson.toJson(errorResponse(e.getMessage())));
+        }
+    }
+
+    @DeleteMapping({"/snapshots/{id}/{snapshotId}", "/connections/{id}/snapshots/{snapshotId}"})
+    public ResponseEntity<String> deleteSnapshot(
+            @PathVariable String id,
+            @PathVariable String snapshotId) {
+        try {
+            boolean deleted = analysisService.deleteSnapshot(id, snapshotId);
+            JsonObject result = new JsonObject();
+            result.addProperty("success", true);
+            result.addProperty("timestamp", System.currentTimeMillis());
+
+            JsonObject data = new JsonObject();
+            data.addProperty("deleted", deleted);
+            result.add("data", data);
+
+            return ResponseEntity.ok(gson.toJson(result));
+        } catch (Exception e) {
+            return ResponseEntity.badRequest().body(gson.toJson(errorResponse(e.getMessage())));
+        }
+    }
+
     // ========== Helper methods ==========
 
     private JsonObject errorResponse(String message) {

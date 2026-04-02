@@ -4,6 +4,8 @@ import com.google.gson.JsonObject;
 import com.memdiag.core.agent.AgentClient;
 import com.memdiag.core.diagnose.DiagnosisEngine;
 import com.memdiag.core.diagnose.DiagnosisResult;
+import com.memdiag.core.diff.Snapshot;
+import com.memdiag.core.diff.SnapshotManager;
 import com.memdiag.core.heap.HeapAnalyzer;
 import com.memdiag.core.heap.HeapHistogram;
 import com.memdiag.core.heap.JmxHeapAnalyzer;
@@ -15,7 +17,10 @@ import com.memdiag.core.util.JmxClient;
 import org.springframework.stereotype.Service;
 
 import javax.annotation.PostConstruct;
+import java.time.Instant;
+import java.util.List;
 import java.util.Map;
+import java.util.UUID;
 import java.util.concurrent.ConcurrentHashMap;
 
 @Service
@@ -26,6 +31,7 @@ public class AnalysisService {
     private final Map<String, HeapAnalyzer> heapAnalyzers = new ConcurrentHashMap<>();
     private final Map<String, DiagnosisEngine> diagnosisEngines = new ConcurrentHashMap<>();
     private final Map<String, ConnectionType> connectionTypes = new ConcurrentHashMap<>();
+    private final Map<String, SnapshotManager> snapshotManagers = new ConcurrentHashMap<>();
 
     public enum ConnectionType {
         JMX,
@@ -434,5 +440,61 @@ public class AnalysisService {
         } else {
             throw new UnsupportedOperationException("GC Roots tracking requires Agent mode");
         }
+    }
+
+    // ========== Snapshot Management ==========
+
+    private SnapshotManager getSnapshotManager(String id) {
+        return snapshotManagers.computeIfAbsent(id, k -> new SnapshotManager());
+    }
+
+    public Snapshot createSnapshot(String connectionId, String name) {
+        // Collect data
+        HeapHistogram histogram = getHistogram(connectionId, 1000);
+        ThreadDump threadDump = getThreads(connectionId);
+
+        // Create snapshot
+        String snapshotId = name != null ? name : UUID.randomUUID().toString().substring(0, 8);
+        Snapshot snapshot = new Snapshot.Builder()
+            .setId(snapshotId)
+            .setTimestamp(Instant.now())
+            .setHeapHistogram(histogram)
+            .setThreadDump(threadDump)
+            .build();
+
+        // Save snapshot
+        SnapshotManager manager = getSnapshotManager(connectionId);
+        manager.saveSnapshot(snapshot);
+
+        return snapshot;
+    }
+
+    public List<SnapshotManager.SnapshotInfo> listSnapshots(String connectionId) {
+        SnapshotManager manager = getSnapshotManager(connectionId);
+        return manager.listSnapshots();
+    }
+
+    public Snapshot loadSnapshot(String connectionId, String snapshotId) {
+        SnapshotManager manager = getSnapshotManager(connectionId);
+        return manager.loadSnapshot(snapshotId);
+    }
+
+    public boolean deleteSnapshot(String connectionId, String snapshotId) {
+        SnapshotManager manager = getSnapshotManager(connectionId);
+        SnapshotManager.SnapshotInfo info = null;
+        for (SnapshotManager.SnapshotInfo i : manager.listSnapshots()) {
+            if (i.id != null && i.id.equals(snapshotId)) {
+                info = i;
+                break;
+            }
+            if (i.filename.equals(snapshotId) || i.filename.equals(snapshotId + ".snapshot")) {
+                info = i;
+                break;
+            }
+        }
+        if (info != null) {
+            return manager.deleteSnapshot(info.path);
+        }
+        return false;
     }
 }
