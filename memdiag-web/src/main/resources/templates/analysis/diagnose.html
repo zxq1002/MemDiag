@@ -292,30 +292,26 @@
             let html = '<div style="display: grid; gap: 15px;">';
             filtered.forEach(item => {
                 const config = severityConfig[item.severity] || severityConfig.info;
-                html += `
-                    <div class="card" style="margin: 0; border-left: 4px solid ${config.color};">
-                        <div class="card-body">
-                            <div class="d-flex align-items-start gap-3">
-                                <i class="bi ${config.icon}" style="font-size: 1.5rem; color: ${config.color};"></i>
-                                <div style="flex: 1;">
-                                    <div class="d-flex align-items-center gap-2 mb-2">
-                                        <h5 style="margin: 0;">${escapeHtml(item.title || '未知问题')}</h5>
-                                        <span class="badge" style="background: ${config.color}20; color: ${config.color};">
-                                            ${config.label}
-                                        </span>
-                                    </div>
-                                    <p style="margin: 0 0 10px; color: #666;">${escapeHtml(item.description || '')}</p>
-                                    ${item.recommendation ? `
-                                        <div style="background: #f8f9fa; padding: 10px 15px; border-radius: 8px;">
-                                            <strong><i class="bi bi-lightbulb"></i> 建议:</strong>
-                                            <span style="margin-left: 8px;">${escapeHtml(item.recommendation)}</span>
-                                        </div>
-                                    ` : ''}
-                                </div>
-                            </div>
-                        </div>
-                    </div>
-                `;
+                html += '<div class="card" style="margin: 0; border-left: 4px solid ' + config.color + ';">';
+                html += '<div class="card-body">';
+                html += '<div class="d-flex align-items-start gap-3">';
+                html += '<i class="bi ' + config.icon + '" style="font-size: 1.5rem; color: ' + config.color + ';"></i>';
+                html += '<div style="flex: 1;">';
+                html += '<div class="d-flex align-items-center gap-2 mb-2">';
+                html += '<h5 style="margin: 0;">' + escapeHtml(item.title || '未知问题') + '</h5>';
+                html += '<span class="badge" style="background: ' + config.color + '20; color: ' + config.color + ';">' + config.label + '</span>';
+                html += '</div>';
+                html += '<p style="margin: 0 0 10px; color: #666;">' + escapeHtml(item.description || '') + '</p>';
+                if (item.recommendation) {
+                    html += '<div style="background: #f8f9fa; padding: 10px 15px; border-radius: 8px;">';
+                    html += '<strong><i class="bi bi-lightbulb"></i> 建议:</strong>';
+                    html += '<span style="margin-left: 8px;">' + escapeHtml(item.recommendation) + '</span>';
+                    html += '</div>';
+                }
+                html += '</div>';
+                html += '</div>';
+                html += '</div>';
+                html += '</div>';
             });
             html += '</div>';
             container.innerHTML = html;
@@ -401,11 +397,7 @@
 
         function showError(message) {
             const container = document.getElementById('diagnosisContainer');
-            container.innerHTML = `
-                <div class="alert alert-danger" style="margin: 20px;">
-                    <i class="bi bi-exclamation-triangle"></i> ${escapeHtml(message)}
-                </div>
-            `;
+            container.innerHTML = '<div class="alert alert-danger" style="margin: 20px;"><i class="bi bi-exclamation-triangle"></i> ' + escapeHtml(message) + '</div>';
         }
 
         function escapeHtml(text) {

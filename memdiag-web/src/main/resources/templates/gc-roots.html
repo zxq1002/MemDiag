@@ -248,13 +248,11 @@
 
             types.forEach(([type, count]) => {
                 const percentage = total > 0 ? ((count / total) * 100).toFixed(1) : 0;
-                html += `
-                    <tr>
-                        <td><code>${escapeHtml(type)}</code></td>
-                        <td>${formatNumber(count)}</td>
-                        <td>${percentage}%</td>
-                    </tr>
-                `;
+                html += '<tr>';
+                html += '<td><code>' + escapeHtml(type) + '</code></td>';
+                html += '<td>' + formatNumber(count) + '</td>';
+                html += '<td>' + percentage + '%</td>';
+                html += '</tr>';
             });
 
             html += '</tbody></table>';
@@ -300,11 +298,7 @@
 
         function showError(message) {
             const container = document.getElementById('gcRootsContainer');
-            container.innerHTML = `
-                <div class="alert alert-danger" style="margin: 0;">
-                    <i class="bi bi-exclamation-triangle"></i> ${escapeHtml(message)}
-                </div>
-            `;
+            container.innerHTML = '<div class="alert alert-danger" style="margin: 0;"><i class="bi bi-exclamation-triangle"></i> ' + escapeHtml(message) + '</div>';
         }
 
         function escapeHtml(text) {

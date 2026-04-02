@@ -371,18 +371,16 @@
             classes.forEach((cls, index) => {
                 const avgSize = cls.instanceCount > 0 ? cls.totalSize / cls.instanceCount : 0;
                 const shortName = cls.className.substring(cls.className.lastIndexOf('.') + 1);
-                html += `
-                    <tr>
-                        <td>
-                            <div title="${escapeHtml(cls.className)}" style="font-family: monospace; font-size: 0.85rem;">
-                                ${escapeHtml(shortName)}
-                            </div>
-                        </td>
-                        <td>${formatNumber(cls.instanceCount || 0)}</td>
-                        <td><strong>${formatBytes(cls.totalSize || 0)}</strong></td>
-                        <td>${formatBytes(Math.round(avgSize))}</td>
-                    </tr>
-                `;
+                html += '<tr>';
+                html += '<td>';
+                html += '<div title="' + escapeHtml(cls.className) + '" style="font-family: monospace; font-size: 0.85rem;">';
+                html += escapeHtml(shortName);
+                html += '</div>';
+                html += '</td>';
+                html += '<td>' + formatNumber(cls.instanceCount || 0) + '</td>';
+                html += '<td><strong>' + formatBytes(cls.totalSize || 0) + '</strong></td>';
+                html += '<td>' + formatBytes(Math.round(avgSize)) + '</td>';
+                html += '</tr>';
             });
 
             html += '</tbody></table>';
@@ -391,11 +389,7 @@
 
         function showError(message) {
             const container = document.getElementById('classListContainer');
-            container.innerHTML = `
-                <div class="alert alert-danger" style="margin: 20px;">
-                    <i class="bi bi-exclamation-triangle"></i> ${escapeHtml(message)}
-                </div>
-            `;
+            container.innerHTML = '<div class="alert alert-danger" style="margin: 20px;"><i class="bi bi-exclamation-triangle"></i> ' + escapeHtml(message) + '</div>';
         }
 
         function escapeHtml(text) {

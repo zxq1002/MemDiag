@@ -109,9 +109,11 @@
 
                 if (format === 'html' || format === 'text') {
                     document.getElementById('previewCard').style.display = 'block';
-                    document.getElementById('previewContainer').innerHTML =
-                        format === 'html' ? `<iframe style="width: 100%; height: 500px; border: 1px solid #ddd; border-radius: 8px;" srcdoc="${escapeHtml(content)}"></iframe>`
-                        : `<pre style="background: #f8f9fa; padding: 15px; border-radius: 8px; max-height: 500px; overflow: auto;">${escapeHtml(content)}</pre>`;
+                    if (format === 'html') {
+                        document.getElementById('previewContainer').innerHTML = '<iframe style="width: 100%; height: 500px; border: 1px solid #ddd; border-radius: 8px;" srcdoc="' + escapeHtml(content) + '"></iframe>';
+                    } else {
+                        document.getElementById('previewContainer').innerHTML = '<pre style="background: #f8f9fa; padding: 15px; border-radius: 8px; max-height: 500px; overflow: auto;">' + escapeHtml(content) + '</pre>';
+                    }
                 }
 
                 const blob = new Blob([content], { type: mimeType });

@@ -177,7 +177,7 @@
             html += '<thead><tr><th>配置项</th><th>值</th></tr></thead>';
             html += '<tbody>';
             configs.forEach(([k, v]) => {
-                html += `<tr><td><code>${escapeHtml(k)}</code></td><td>${escapeHtml(String(v))}</td></tr>`;
+                html += '<tr><td><code>' + escapeHtml(k) + '</code></td><td>' + escapeHtml(String(v)) + '</td></tr>';
             });
             html += '</tbody></table>';
             container.innerHTML = html;
@@ -196,7 +196,7 @@
             html += '<thead><tr><th>指标</th><th>值</th></tr></thead>';
             html += '<tbody>';
             metrics.forEach(([k, v]) => {
-                html += `<tr><td>${escapeHtml(k)}</td><td>${escapeHtml(String(v))}</td></tr>`;
+                html += '<tr><td>' + escapeHtml(k) + '</td><td>' + escapeHtml(String(v)) + '</td></tr>';
             });
             html += '</tbody></table>';
             container.innerHTML = html;

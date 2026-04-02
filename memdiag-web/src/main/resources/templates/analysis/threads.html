@@ -346,42 +346,45 @@
             threads.forEach(t => {
                 const stateBadgeColor = stateColors[t.state] || '#6c757d';
                 const hasStackTrace = t.stackTrace && t.stackTrace.length > 0;
+                const threadId = t.id || '-';
+                const threadName = t.name || 'Unknown';
+                const threadState = t.state || '-';
+                const threadPriority = t.priority || '-';
+                const lockName = t.lockName || '';
 
-                html += `
-                    <tr>
-                        <td><code>${t.id || '-'}</code></td>
-                        <td>
-                            <div style="font-family: monospace; font-size: 0.85rem;">
-                                ${escapeHtml(t.name || 'Unknown')}
-                            </div>
-                        </td>
-                        <td>
-                            <span class="badge" style="background: ${stateBadgeColor}20; color: ${stateBadgeColor};">
-                                ${t.state || '-'}
-                            </span>
-                        </td>
-                        <td>${t.priority || '-'}</td>
-                        <td>
-                            ${t.lockName ? `<span class="badge badge-warning" title="${escapeHtml(t.lockName)}">持有锁</span>` : '-'}
-                        </td>
-                        <td>
-                            ${hasStackTrace ? `
-                                <button class="btn btn-outline btn-sm" onclick="showStackTrace('${escapeHtml(t.name)}', ${JSON.stringify(t.stackTrace).replace(/'/g, "\\'")})">
-                                    <i class="bi bi-list-nested"></i> 堆栈
-                                </button>
-                            ` : '-'}
-                        </td>
-                    </tr>
-                `;
+                html += '<tr>';
+                html += '<td><code>' + threadId + '</code></td>';
+                html += '<td><div style="font-family: monospace; font-size: 0.85rem;">' + escapeHtml(threadName) + '</div></td>';
+                html += '<td><span class="badge" style="background: ' + stateBadgeColor + '20; color: ' + stateBadgeColor + ';">' + threadState + '</span></td>';
+                html += '<td>' + threadPriority + '</td>';
+                html += '<td>';
+                if (lockName) {
+                    html += '<span class="badge badge-warning" title="' + escapeHtml(lockName) + '">持有锁</span>';
+                } else {
+                    html += '-';
+                }
+                html += '</td>';
+                html += '<td>';
+                if (hasStackTrace) {
+                    html += '<button class="btn btn-outline btn-sm" onclick="showStackTraceByIndex(' + allThreads.indexOf(t) + ')">';
+                    html += '<i class="bi bi-list-nested"></i> 堆栈';
+                    html += '</button>';
+                } else {
+                    html += '-';
+                }
+                html += '</td>';
+                html += '</tr>';
             });
 
             html += '</tbody></table>';
             container.innerHTML = html;
         }
 
-        function showStackTrace(name, stackTrace) {
-            document.getElementById('stackTraceModalTitle').textContent = `堆栈追踪 - ${name}`;
-            const content = stackTrace.join('\n');
+        function showStackTraceByIndex(index) {
+            const t = allThreads[index];
+            if (!t) return;
+            document.getElementById('stackTraceModalTitle').textContent = '堆栈追踪 - ' + t.name;
+            const content = (t.stackTrace || []).join('\n');
             document.getElementById('stackTraceContent').textContent = content;
 
             const modal = new bootstrap.Modal(document.getElementById('stackTraceModal'));

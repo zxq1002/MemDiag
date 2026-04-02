@@ -45,6 +45,7 @@
     <script th:inline="javascript" th:fragment="scripts">
         // Get connectionId directly from template
         let connectionId = /*[[${connectionId}]]*/ null;
+        let allSnapshots = [];
 
         document.addEventListener('DOMContentLoaded', function() {
             document.getElementById('refreshBtn').addEventListener('click', loadSnapshots);
@@ -67,14 +68,9 @@
 
         function loadSnapshots() {
             const container = document.getElementById('snapshotsContainer');
-            container.innerHTML = `
-                <div class="loading" style="padding: 40px;">
-                    <div class="spinner"></div>
-                    <span style="margin-left: 15px;">加载中...</span>
-                </div>
-            `;
+            container.innerHTML = '<div class="loading" style="padding: 40px;"><div class="spinner"></div><span style="margin-left: 15px;">加载中...</span></div>';
 
-            fetch(`/api/v1/connections/${encodeURIComponent(connectionId)}/snapshots`)
+            fetch('/api/v1/connections/' + encodeURIComponent(connectionId) + '/snapshots')
                 .then(response => response.json())
                 .then(data => {
                     if (data.success) {
@@ -90,36 +86,31 @@
 
         function renderSnapshots(snapshots) {
             const container = document.getElementById('snapshotsContainer');
+            allSnapshots = snapshots || [];
 
-            if (!snapshots || snapshots.length === 0) {
-                container.innerHTML = `
-                    <div class="alert alert-info" style="margin: 0;">
-                        <i class="bi bi-info-circle"></i> 暂无快照，点击"创建快照"按钮创建新快照
-                    </div>
-                `;
+            if (!allSnapshots || allSnapshots.length === 0) {
+                container.innerHTML = '<div class="alert alert-info" style="margin: 0;"><i class="bi bi-info-circle"></i> 暂无快照，点击"创建快照"按钮创建新快照</div>';
                 return;
             }
 
             let html = '<table class="table" style="margin: 0;">';
             html += '<thead><tr><th>ID</th><th>名称</th><th>创建时间</th><th>大小</th><th>操作</th></tr></thead>';
             html += '<tbody>';
-            snapshots.forEach(s => {
-                html += `
-                    <tr>
-                        <td><code>${s.id || '-'}</code></td>
-                        <td>${escapeHtml(s.name || 'Snapshot')}</td>
-                        <td>${formatDate(s.createdAt)}</td>
-                        <td>${formatBytes(s.size || 0)}</td>
-                        <td>
-                            <button class="btn btn-outline btn-sm" onclick="loadSnapshot('${escapeHtml(s.id)}')">
-                                <i class="bi bi-folder-open"></i> 加载
-                            </button>
-                            <button class="btn btn-outline btn-sm" onclick="deleteSnapshot('${escapeHtml(s.id)}')" style="color: var(--danger-color);">
-                                <i class="bi bi-trash"></i> 删除
-                            </button>
-                        </td>
-                    </tr>
-                `;
+            allSnapshots.forEach((s, index) => {
+                html += '<tr>';
+                html += '<td><code>' + (s.id || '-') + '</code></td>';
+                html += '<td>' + escapeHtml(s.name || 'Snapshot') + '</td>';
+                html += '<td>' + formatDate(s.createdAt) + '</td>';
+                html += '<td>' + formatBytes(s.size || 0) + '</td>';
+                html += '<td>';
+                html += '<button class="btn btn-outline btn-sm" onclick="loadSnapshotByIndex(' + index + ')">';
+                html += '<i class="bi bi-folder-open"></i> 加载';
+                html += '</button>';
+                html += '<button class="btn btn-outline btn-sm" onclick="deleteSnapshotByIndex(' + index + ')" style="color: var(--danger-color);">';
+                html += '<i class="bi bi-trash"></i> 删除';
+                html += '</button>';
+                html += '</td>';
+                html += '</tr>';
             });
             html += '</tbody></table>';
             container.innerHTML = html;
@@ -133,7 +124,7 @@
             btn.disabled = true;
             btn.innerHTML = '<span class="spinner" style="width: 16px; height: 16px; border-width: 2px; margin-right: 8px;"></span> 创建中...';
 
-            fetch(`/api/v1/connections/${encodeURIComponent(connectionId)}/snapshot`, {
+            fetch('/api/v1/connections/' + encodeURIComponent(connectionId) + '/snapshot', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ name: name })
@@ -156,14 +147,18 @@
             });
         }
 
-        function loadSnapshot(id) {
-            window.location.href = `/analysis/heap/${encodeURIComponent(connectionId)}?snapshot=${encodeURIComponent(id)}`;
+        function loadSnapshotByIndex(index) {
+            const s = allSnapshots[index];
+            if (s) {
+                window.location.href = '/analysis/heap/' + encodeURIComponent(connectionId) + '?snapshot=' + encodeURIComponent(s.id);
+            }
         }
 
-        function deleteSnapshot(id) {
-            if (!confirm('确定要删除这个快照吗?')) return;
+        function deleteSnapshotByIndex(index) {
+            const s = allSnapshots[index];
+            if (!s || !confirm('确定要删除这个快照吗?')) return;
 
-            fetch(`/api/v1/connections/${encodeURIComponent(connectionId)}/snapshots/${encodeURIComponent(id)}`, {
+            fetch('/api/v1/connections/' + encodeURIComponent(connectionId) + '/snapshots/' + encodeURIComponent(s.id), {
                 method: 'DELETE'
             })
             .then(response => response.json())
@@ -181,11 +176,7 @@
 
         function showError(message) {
             const container = document.getElementById('snapshotsContainer');
-            container.innerHTML = `
-                <div class="alert alert-danger" style="margin: 0;">
-                    <i class="bi bi-exclamation-triangle"></i> ${escapeHtml(message)}
-                </div>
-            `;
+            container.innerHTML = '<div class="alert alert-danger" style="margin: 0;"><i class="bi bi-exclamation-triangle"></i> ' + escapeHtml(message) + '</div>';
         }
 
         function escapeHtml(text) {

@@ -125,15 +125,13 @@
             html += '<thead><tr><th>地址</th><th>大小</th><th>类型</th><th>权限</th><th>映射文件</th></tr></thead>';
             html += '<tbody>';
             regions.forEach(r => {
-                html += `
-                    <tr>
-                        <td><code>${r.address || '-'}</code></td>
-                        <td>${formatBytes(r.size || 0)}</td>
-                        <td>${escapeHtml(r.type || '-')}</td>
-                        <td>${escapeHtml(r.permissions || '-')}</td>
-                        <td>${escapeHtml(r.mappedFile || '-')}</td>
-                    </tr>
-                `;
+                html += '<tr>';
+                html += '<td><code>' + (r.address || '-') + '</code></td>';
+                html += '<td>' + formatBytes(r.size || 0) + '</td>';
+                html += '<td>' + escapeHtml(r.type || '-') + '</td>';
+                html += '<td>' + escapeHtml(r.permissions || '-') + '</td>';
+                html += '<td>' + escapeHtml(r.mappedFile || '-') + '</td>';
+                html += '</tr>';
             });
             html += '</tbody></table>';
             container.innerHTML = html;
@@ -141,11 +139,7 @@
 
         function showError(message) {
             const container = document.getElementById('nativeContainer');
-            container.innerHTML = `
-                <div class="alert alert-danger" style="margin: 0;">
-                    <i class="bi bi-exclamation-triangle"></i> ${escapeHtml(message)}
-                </div>
-            `;
+            container.innerHTML = '<div class="alert alert-danger" style="margin: 0;"><i class="bi bi-exclamation-triangle"></i> ' + escapeHtml(message) + '</div>';
         }
 
         function escapeHtml(text) {

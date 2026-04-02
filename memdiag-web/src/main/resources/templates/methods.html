@@ -194,15 +194,13 @@
             html += '<tbody>';
 
             sorted.forEach(m => {
-                html += `
-                    <tr>
-                        <td><code style="font-size: 0.8rem;">${escapeHtml(m.methodName || 'Unknown')}</code></td>
-                        <td>${formatNumber(m.count || 0)}</td>
-                        <td>${formatMs(m.avgDuration || 0)}</td>
-                        <td>${formatMs((m.avgDuration || 0) * (m.count || 0))}</td>
-                        <td>${formatMs(m.maxDuration || 0)}</td>
-                    </tr>
-                `;
+                html += '<tr>';
+                html += '<td><code style="font-size: 0.8rem;">' + escapeHtml(m.methodName || 'Unknown') + '</code></td>';
+                html += '<td>' + formatNumber(m.count || 0) + '</td>';
+                html += '<td>' + formatMs(m.avgDuration || 0) + '</td>';
+                html += '<td>' + formatMs((m.avgDuration || 0) * (m.count || 0)) + '</td>';
+                html += '<td>' + formatMs(m.maxDuration || 0) + '</td>';
+                html += '</tr>';
             });
 
             html += '</tbody></table>';

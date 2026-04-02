@@ -95,7 +95,7 @@
             const compare = document.getElementById('compareSelect');
 
             const options = snapshots.map(s =>
-                `<option value="${escapeHtml(s.id)}">${escapeHtml(s.name)} (${new Date(s.createdAt).toLocaleString()})</option>`
+                '<option value="' + escapeHtml(s.id) + '">' + escapeHtml(s.name) + ' (' + new Date(s.createdAt).toLocaleString() + ')</option>'
             ).join('');
 
             baseline.innerHTML = '<option value="">选择基线...</option>' + options;
@@ -161,21 +161,17 @@
                 const isIncrease = sizeChange > 0;
                 const trendIcon = isIncrease ? 'bi-arrow-up' : 'bi-arrow-down';
                 const trendColor = isIncrease ? '#dc3545' : '#198754';
+                const sizeColor = isIncrease ? '#dc3545' : '#198754';
+                const countColor = countChange > 0 ? '#dc3545' : '#198754';
+                const sizePrefix = isIncrease ? '+' : '';
+                const countPrefix = countChange > 0 ? '+' : '';
 
-                html += `
-                    <tr>
-                        <td><code>${escapeHtml(c.className || 'Unknown')}</code></td>
-                        <td style="color: ${isIncrease ? '#dc3545' : '#198754'};">
-                            ${isIncrease ? '+' : ''}${formatBytes(sizeChange)}
-                        </td>
-                        <td style="color: ${countChange > 0 ? '#dc3545' : '#198754'};">
-                            ${countChange > 0 ? '+' : ''}${countChange}
-                        </td>
-                        <td>
-                            <i class="bi ${trendIcon}" style="color: ${trendColor};"></i>
-                        </td>
-                    </tr>
-                `;
+                html += '<tr>';
+                html += '<td><code>' + escapeHtml(c.className || 'Unknown') + '</code></td>';
+                html += '<td style="color: ' + sizeColor + ';">' + sizePrefix + formatBytes(sizeChange) + '</td>';
+                html += '<td style="color: ' + countColor + ';">' + countPrefix + countChange + '</td>';
+                html += '<td><i class="bi ' + trendIcon + '" style="color: ' + trendColor + ';"></i></td>';
+                html += '</tr>';
             });
 
             html += '</tbody></table>';
@@ -184,11 +180,7 @@
 
         function showError(message) {
             const container = document.getElementById('diffContainer');
-            container.innerHTML = `
-                <div class="alert alert-danger" style="margin: 0;">
-                    <i class="bi bi-exclamation-triangle"></i> ${escapeHtml(message)}
-                </div>
-            `;
+            container.innerHTML = '<div class="alert alert-danger" style="margin: 0;"><i class="bi bi-exclamation-triangle"></i> ' + escapeHtml(message) + '</div>';
         }
 
         function escapeHtml(text) {
