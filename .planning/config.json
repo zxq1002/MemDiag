@@ -1,0 +1,21 @@
+{
+  "workflow": {
+    "preferredMode": "hybrid",
+    "autoCommit": true,
+    "requireApproval": false,
+    "modelProfile": "balanced"
+  },
+  "testing": {
+    "minCoverage": 80,
+    "tddEnabled": true,
+    "autoRunTests": true
+  },
+  "codeReview": {
+    "autoReview": true,
+    "severityThreshold": "HIGH"
+  },
+  "git": {
+    "conventionalCommits": true,
+    "autoPush": false
+  }
+}
