@@ -46,7 +46,7 @@
                 <a th:href="@{/analysis/diagnose/{id}(id=${connectionId} ?: 'current')}"
                    class="nav-item" th:classappend="${activePage == 'diagnose'} ? 'active' : ''"
                    >
-                    <i class="bi bi-stethoscope"></i> 诊断报告
+                    <i class="bi bi-clipboard2-pulse"></i> 诊断报告
                 </a>
                 <a th:href="@{/analysis/native/{id}(id=${connectionId} ?: 'current')}"
                    class="nav-item" th:classappend="${activePage == 'native'} ? 'active' : ''"
@@ -197,15 +197,13 @@
                         const isActive = id === currentConnectionId;
                         const isOnline = status && status.includes('connected');
                         const badgeClass = isOnline ? 'bg-success' : 'bg-secondary';
-                        html += `
-                            <li>
-                                <a class="dropdown-item ${isActive ? 'active' : ''}" href="#" onclick="switchConnection('${id}'); return false;">
-                                    <span class="badge ${badgeClass}" style="margin-right: 8px; width: 8px; height: 8px; display: inline-block; border-radius: 50%;"></span>
-                                    ${id}
-                                    ${isActive ? '<i class="bi bi-check" style="margin-left: 8px;"></i>' : ''}
-                                </a>
-                            </li>
-                        `;
+                        html += '<li>\n' +
+                            '    <a class="dropdown-item ' + (isActive ? 'active' : '') + '" href="#" onclick="switchConnection(\'' + id + '\'); return false;">\n' +
+                            '        <span class="badge ' + badgeClass + '" style="margin-right: 8px; width: 8px; height: 8px; display: inline-block; border-radius: 50%;"></span>\n' +
+                            '        ' + id + '\n' +
+                            (isActive ? '        <i class="bi bi-check" style="margin-left: 8px;"></i>\n' : '') +
+                            '    </a>\n' +
+                            '</li>\n';
                     }
                     dropdown.innerHTML = html;
                 })
