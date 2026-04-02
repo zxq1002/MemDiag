@@ -79,7 +79,7 @@
         }
 
         function loadSnapshots() {
-            fetch(`/api/v1/connections/${encodeURIComponent(connectionId)}/snapshots`)
+            fetch('/api/v1/connections/' + encodeURIComponent(connectionId) + '/snapshots')
                 .then(response => response.json())
                 .then(data => {
                     if (data.success) {
@@ -117,14 +117,13 @@
             }
 
             document.getElementById('diffCard').style.display = 'block';
-            document.getElementById('diffContainer').innerHTML = `
-                <div class="loading" style="padding: 40px;">
-                    <div class="spinner"></div>
-                    <span style="margin-left: 15px;">对比中...</span>
-                </div>
-            `;
+            document.getElementById('diffContainer').innerHTML =
+                '<div class="loading" style="padding: 40px;">' +
+                    '<div class="spinner"></div>' +
+                    '<span style="margin-left: 15px;">对比中...</span>' +
+                '</div>';
 
-            fetch(`/api/v1/connections/${encodeURIComponent(connectionId)}/diff?baseline=${encodeURIComponent(baselineId)}&compare=${encodeURIComponent(compareId)}`)
+            fetch('/api/v1/connections/' + encodeURIComponent(connectionId) + '/diff?baseline=' + encodeURIComponent(baselineId) + '&compare=' + encodeURIComponent(compareId))
                 .then(response => response.json())
                 .then(data => {
                     if (data.success) {
@@ -143,7 +142,7 @@
             const changes = diff.changes || [];
 
             let html = '<div style="margin-bottom: 20px;">';
-            html += `<strong>总变化:</strong> ${formatBytes(diff.totalSizeChange || 0)}`;
+            html += '<strong>总变化:</strong> ' + formatBytes(diff.totalSizeChange || 0);
             html += '</div>';
 
             if (changes.length === 0) {

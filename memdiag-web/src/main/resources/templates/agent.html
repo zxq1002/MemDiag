@@ -136,9 +136,9 @@
 
         function loadAgentStatus() {
             Promise.all([
-                fetch(`/api/v1/connections/${encodeURIComponent(connectionId)}/agent/status`).then(r => r.json()),
-                fetch(`/api/v1/connections/${encodeURIComponent(connectionId)}/agent/config`).then(r => r.json()),
-                fetch(`/api/v1/connections/${encodeURIComponent(connectionId)}/agent/metrics`).then(r => r.json())
+                fetch('/api/v1/connections/' + encodeURIComponent(connectionId) + '/agent/status').then(r => r.json()),
+                fetch('/api/v1/connections/' + encodeURIComponent(connectionId) + '/agent/config').then(r => r.json()),
+                fetch('/api/v1/connections/' + encodeURIComponent(connectionId) + '/agent/metrics').then(r => r.json())
             ])
             .then(([status, config, metrics]) => {
                 if (status.success) renderStatus(status.data);
@@ -208,7 +208,7 @@
                 methodMonitorEnabled: document.getElementById('methodToggle').checked
             };
 
-            fetch(`/api/v1/connections/${encodeURIComponent(connectionId)}/agent/config`, {
+            fetch('/api/v1/connections/' + encodeURIComponent(connectionId) + '/agent/config', {
                 method: 'PUT',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify(config)
@@ -232,16 +232,14 @@
             document.getElementById('instrumentStatus').innerHTML = '<span style="color: #6c757d;">-</span>';
             document.getElementById('transformedCount').textContent = '-';
 
-            document.getElementById('configContainer').innerHTML = `
-                <div class="alert alert-info" style="margin: 0;">
-                    <i class="bi bi-info-circle"></i> 请通过 Agent 模式连接以获取 Agent 状态
-                </div>
-            `;
-            document.getElementById('metricsContainer').innerHTML = `
-                <div class="alert alert-info" style="margin: 0;">
-                    <i class="bi bi-info-circle"></i> 请通过 Agent 模式连接以获取指标
-                </div>
-            `;
+            document.getElementById('configContainer').innerHTML =
+                '<div class="alert alert-info" style="margin: 0;">' +
+                    '<i class="bi bi-info-circle"></i> 请通过 Agent 模式连接以获取 Agent 状态' +
+                '</div>';
+            document.getElementById('metricsContainer').innerHTML =
+                '<div class="alert alert-info" style="margin: 0;">' +
+                    '<i class="bi bi-info-circle"></i> 请通过 Agent 模式连接以获取指标' +
+                '</div>';
         }
 
         function escapeHtml(text) {

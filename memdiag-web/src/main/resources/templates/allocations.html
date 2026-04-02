@@ -121,9 +121,9 @@
 
         function loadAllocations() {
             Promise.all([
-                fetch(`/api/v1/connections/${encodeURIComponent(connectionId)}/allocations/stats`).then(r => r.json()),
-                fetch(`/api/v1/connections/${encodeURIComponent(connectionId)}/allocations/top`).then(r => r.json()),
-                fetch(`/api/v1/connections/${encodeURIComponent(connectionId)}/allocations/recent`).then(r => r.json())
+                fetch('/api/v1/connections/' + encodeURIComponent(connectionId) + '/allocations/stats').then(r => r.json()),
+                fetch('/api/v1/connections/' + encodeURIComponent(connectionId) + '/allocations/top').then(r => r.json()),
+                fetch('/api/v1/connections/' + encodeURIComponent(connectionId) + '/allocations/recent').then(r => r.json())
             ])
             .then(([stats, top, recent]) => {
                 if (stats.success) renderStats(stats.data);
@@ -180,11 +180,10 @@
             allEvents = events;
 
             if (events.length === 0) {
-                container.innerHTML = `
-                    <div class="alert alert-info" style="margin: 0;">
-                        <i class="bi bi-info-circle"></i> 暂无分配事件
-                    </div>
-                `;
+                container.innerHTML =
+                    '<div class="alert alert-info" style="margin: 0;">' +
+                        '<i class="bi bi-info-circle"></i> 暂无分配事件' +
+                    '</div>';
                 return;
             }
 

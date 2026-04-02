@@ -75,16 +75,16 @@
         function generateReport() {
             const format = document.getElementById('formatSelect').value;
             const timestamp = new Date().toISOString().replace(/[:.]/g, '-');
-            const filename = `memdiag-report-${connectionId}-${timestamp}.${format}`;
+            const filename = 'memdiag-report-' + connectionId + '-' + timestamp + '.' + format;
 
             const btn = document.getElementById('generateBtn');
             btn.disabled = true;
             btn.innerHTML = '<span class="spinner" style="width: 16px; height: 16px; border-width: 2px; margin-right: 8px;"></span> 生成中...';
 
             Promise.all([
-                fetch(`/api/v1/connections/${encodeURIComponent(connectionId)}/histogram`).then(r => r.json()),
-                fetch(`/api/v1/connections/${encodeURIComponent(connectionId)}/threads`).then(r => r.json()),
-                fetch(`/api/v1/connections/${encodeURIComponent(connectionId)}/diagnose`).then(r => r.json())
+                fetch('/api/v1/connections/' + encodeURIComponent(connectionId) + '/histogram').then(r => r.json()),
+                fetch('/api/v1/connections/' + encodeURIComponent(connectionId) + '/threads').then(r => r.json()),
+                fetch('/api/v1/connections/' + encodeURIComponent(connectionId) + '/diagnose').then(r => r.json())
             ])
             .then(([histogram, threads, diagnose]) => {
                 const report = {
@@ -134,81 +134,87 @@
         }
 
         function generateHtmlReport(report) {
-            return `
-<!DOCTYPE html>
-<html>
-<head>
-    <meta charset="UTF-8">
-    <title>MemDiag Report - ${report.connectionId}</title>
-    <style>
-        body { font-family: -apple-system, sans-serif; max-width: 900px; margin: 0 auto; padding: 40px 20px; }
-        h1 { border-bottom: 2px solid #0d6efd; padding-bottom: 10px; }
-        .section { margin: 30px 0; }
-        table { width: 100%; border-collapse: collapse; }
-        th, td { padding: 10px; border-bottom: 1px solid #eee; text-align: left; }
-        th { background: #f8f9fa; }
-        .meta { color: #666; font-size: 0.9rem; margin-top: 20px; }
-    </style>
-</head>
-<body>
-    <h1>MemDiag 诊断报告</h1>
-    <p><strong>连接:</strong> ${report.connectionId}</p>
-    <p><strong>生成时间:</strong> ${new Date(report.generatedAt).toLocaleString()}</p>
-
-    <div class="section">
-        <h2>诊断结果</h2>
-        ${report.diagnosis ? `
-            <p>问题数: ${(report.diagnosis.issues || []).length}</p>
-            ${(report.diagnosis.issues || []).map(i => `
-                <div style="padding: 15px; margin: 10px 0; background: #fff5f5; border-left: 4px solid #dc3545; border-radius: 4px;">
-                    <strong>${i.title}</strong>
-                    <p>${i.description}</p>
-                </div>
-            `).join('')}
-        ` : '<p>暂无诊断数据</p>'}
-    </div>
-
-    <div class="section">
-        <h2>堆内存概览</h2>
-        ${report.heap ? `
-            <p>类数量: ${(report.heap.classes || []).length}</p>
-        ` : '<p>暂无堆数据</p>'}
-    </div>
-
-    <div class="section">
-        <h2>线程概览</h2>
-        ${report.threads ? `
-            <p>线程数: ${(report.threads.threads || []).length}</p>
-        ` : '<p>暂无线程数据</p>'}
-    </div>
-
-    <div class="meta">由 MemDiag 生成</div>
-</body>
-</html>`;
+            var html = '<!DOCTYPE html>\n' +
+'<html>\n' +
+'<head>\n' +
+'    <meta charset="UTF-8">\n' +
+'    <title>MemDiag Report - ' + report.connectionId + '</title>\n' +
+'    <style>\n' +
+'        body { font-family: -apple-system, sans-serif; max-width: 900px; margin: 0 auto; padding: 40px 20px; }\n' +
+'        h1 { border-bottom: 2px solid #0d6efd; padding-bottom: 10px; }\n' +
+'        .section { margin: 30px 0; }\n' +
+'        table { width: 100%; border-collapse: collapse; }\n' +
+'        th, td { padding: 10px; border-bottom: 1px solid #eee; text-align: left; }\n' +
+'        th { background: #f8f9fa; }\n' +
+'        .meta { color: #666; font-size: 0.9rem; margin-top: 20px; }\n' +
+'    </style>\n' +
+'</head>\n' +
+'<body>\n' +
+'    <h1>MemDiag 诊断报告</h1>\n' +
+'    <p><strong>连接:</strong> ' + report.connectionId + '</p>\n' +
+'    <p><strong>生成时间:</strong> ' + new Date(report.generatedAt).toLocaleString() + '</p>\n' +
+'\n' +
+'    <div class="section">\n' +
+'        <h2>诊断结果</h2>\n';
+            if (report.diagnosis) {
+                html += '            <p>问题数: ' + (report.diagnosis.issues || []).length + '</p>\n';
+                (report.diagnosis.issues || []).forEach(function(i) {
+                    html += '            <div style="padding: 15px; margin: 10px 0; background: #fff5f5; border-left: 4px solid #dc3545; border-radius: 4px;">\n' +
+'                    <strong>' + i.title + '</strong>\n' +
+'                    <p>' + i.description + '</p>\n' +
+'                </div>\n';
+                });
+            } else {
+                html += '        <p>暂无诊断数据</p>\n';
+            }
+            html += '    </div>\n' +
+'\n' +
+'    <div class="section">\n' +
+'        <h2>堆内存概览</h2>\n';
+            if (report.heap) {
+                html += '            <p>类数量: ' + (report.heap.classes || []).length + '</p>\n';
+            } else {
+                html += '        <p>暂无堆数据</p>\n';
+            }
+            html += '    </div>\n' +
+'\n' +
+'    <div class="section">\n' +
+'        <h2>线程概览</h2>\n';
+            if (report.threads) {
+                html += '            <p>线程数: ' + (report.threads.threads || []).length + '</p>\n';
+            } else {
+                html += '        <p>暂无线程数据</p>\n';
+            }
+            html += '    </div>\n' +
+'\n' +
+'    <div class="meta">由 MemDiag 生成</div>\n' +
+'</body>\n' +
+'</html>';
+            return html;
         }
 
         function generateTextReport(report) {
-            let text = `MemDiag 诊断报告\n`;
-            text += `连接: ${report.connectionId}\n`;
-            text += `生成时间: ${new Date(report.generatedAt).toLocaleString()}\n`;
-            text += `${'='.repeat(60)}\n\n`;
+            let text = 'MemDiag 诊断报告\n';
+            text += '连接: ' + report.connectionId + '\n';
+            text += '生成时间: ' + new Date(report.generatedAt).toLocaleString() + '\n';
+            text += '============================================================\n\n';
 
             if (report.diagnosis) {
-                text += `诊断结果:\n`;
-                (report.diagnosis.issues || []).forEach(i => {
-                    text += `  [${i.severity}] ${i.title}\n`;
-                    text += `    ${i.description}\n`;
-                    if (i.recommendation) text += `    建议: ${i.recommendation}\n`;
+                text += '诊断结果:\n';
+                (report.diagnosis.issues || []).forEach(function(i) {
+                    text += '  [' + i.severity + '] ' + i.title + '\n';
+                    text += '    ' + i.description + '\n';
+                    if (i.recommendation) text += '    建议: ' + i.recommendation + '\n';
                     text += '\n';
                 });
             }
 
             if (report.heap) {
-                text += `堆内存: ${(report.heap.classes || []).length} 个类\n\n`;
+                text += '堆内存: ' + (report.heap.classes || []).length + ' 个类\n\n';
             }
 
             if (report.threads) {
-                text += `线程: ${(report.threads.threads || []).length} 个线程\n\n`;
+                text += '线程: ' + (report.threads.threads || []).length + ' 个线程\n\n';
             }
 
             return text;

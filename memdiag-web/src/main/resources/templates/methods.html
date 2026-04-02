@@ -111,7 +111,7 @@
         }
 
         function loadMethods() {
-            fetch(`/api/v1/connections/${encodeURIComponent(connectionId)}/methods/stats`)
+            fetch('/api/v1/connections/' + encodeURIComponent(connectionId) + '/methods/stats')
                 .then(response => response.json())
                 .then(data => {
                     if (data.success) {

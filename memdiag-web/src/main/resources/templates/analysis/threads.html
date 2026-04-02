@@ -205,7 +205,7 @@
         }
 
         function loadThreadData() {
-            fetch(`/api/v1/connections/${encodeURIComponent(connectionId)}/threads`)
+            fetch('/api/v1/connections/' + encodeURIComponent(connectionId) + '/threads')
                 .then(response => response.json())
                 .then(data => {
                     if (data.success) {
@@ -294,7 +294,7 @@
 
             if (data.deadlockedThreads && data.deadlockedThreads.length > 0) {
                 alert.style.display = 'block';
-                details.textContent = `涉及 ${data.deadlockedThreads.length} 个线程`;
+                details.textContent = '涉及 ' + data.deadlockedThreads.length + ' 个线程';
             } else {
                 alert.style.display = 'none';
             }
@@ -329,19 +329,17 @@
             }
 
             let html = '<table class="table" style="margin: 0;">';
-            html += `
-                <thead style="position: sticky; top: 0; background: white; z-index: 1;">
-                    <tr>
-                        <th style="width: 50px;">ID</th>
-                        <th style="width: 25%;">线程名</th>
-                        <th style="width: 120px;">状态</th>
-                        <th style="width: 100px;">优先级</th>
-                        <th style="width: 150px;">锁</th>
-                        <th style="width: 100px;">操作</th>
-                    </tr>
-                </thead>
-                <tbody>
-            `;
+            html += '<thead style="position: sticky; top: 0; background: white; z-index: 1;">' +
+                '<tr>' +
+                '<th style="width: 50px;">ID</th>' +
+                '<th style="width: 25%;">线程名</th>' +
+                '<th style="width: 120px;">状态</th>' +
+                '<th style="width: 100px;">优先级</th>' +
+                '<th style="width: 150px;">锁</th>' +
+                '<th style="width: 100px;">操作</th>' +
+                '</tr>' +
+                '</thead>' +
+                '<tbody>';
 
             threads.forEach(t => {
                 const stateBadgeColor = stateColors[t.state] || '#6c757d';

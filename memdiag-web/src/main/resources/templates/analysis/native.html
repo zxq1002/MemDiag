@@ -90,7 +90,7 @@
         }
 
         function loadNativeData() {
-            fetch(`/api/v1/connections/${encodeURIComponent(connectionId)}/native/summary`)
+            fetch('/api/v1/connections/' + encodeURIComponent(connectionId) + '/native/summary')
                 .then(response => response.json())
                 .then(data => {
                     if (data.success) {

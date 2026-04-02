@@ -148,7 +148,7 @@
         }
 
         function loadGcRoots() {
-            fetch(`/api/v1/connections/${encodeURIComponent(connectionId)}/gc-roots/stats`)
+            fetch('/api/v1/connections/' + encodeURIComponent(connectionId) + '/gc-roots/stats')
                 .then(response => response.json())
                 .then(data => {
                     if (data.success) {
@@ -232,11 +232,10 @@
                 .sort((a, b) => b[1] - a[1]);
 
             if (types.length === 0) {
-                container.innerHTML = `
-                    <div class="alert alert-info" style="margin: 0;">
-                        <i class="bi bi-info-circle"></i> 暂无 GC Root 数据
-                    </div>
-                `;
+                container.innerHTML =
+                    '<div class="alert alert-info" style="margin: 0;">' +
+                        '<i class="bi bi-info-circle"></i> 暂无 GC Root 数据' +
+                    '</div>';
                 return;
             }
 
@@ -260,7 +259,7 @@
         }
 
         function startTracking() {
-            fetch(`/api/v1/connections/${encodeURIComponent(connectionId)}/gc-roots/track/start`, {
+            fetch('/api/v1/connections/' + encodeURIComponent(connectionId) + '/gc-roots/track/start', {
                 method: 'POST'
             })
             .then(response => response.json())
@@ -278,7 +277,7 @@
         }
 
         function stopTracking() {
-            fetch(`/api/v1/connections/${encodeURIComponent(connectionId)}/gc-roots/track/stop`, {
+            fetch('/api/v1/connections/' + encodeURIComponent(connectionId) + '/gc-roots/track/stop', {
                 method: 'POST'
             })
             .then(response => response.json())

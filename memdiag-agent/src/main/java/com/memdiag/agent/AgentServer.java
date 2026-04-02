@@ -692,7 +692,7 @@ public class AgentServer {
                 result.put("classStats", statsList);
                 result.put("totalBytes", histogram.getTotalBytes());
                 result.put("totalObjects", histogram.getTotalObjects());
-                sendJson(exchange, toJson(result), 200);
+                sendSuccess(exchange, result);
             } catch (Exception e) {
                 sendError(exchange, e.getMessage(), 500);
             }
@@ -790,7 +790,9 @@ public class AgentServer {
                     }
                 }
                 result.put("threadStats", statsList);
-                sendJson(exchange, toJson(result), 200);
+                // Also add deadlockedThreads for web compatibility
+                result.put("deadlockedThreads", new ArrayList<>());
+                sendSuccess(exchange, result);
             } catch (Exception e) {
                 sendError(exchange, e.getMessage(), 500);
             }
@@ -887,7 +889,7 @@ public class AgentServer {
                     }
                 }
                 resultMap.put("issues", issuesList);
-                sendJson(exchange, toJson(resultMap), 200);
+                sendSuccess(exchange, resultMap);
             } catch (Exception e) {
                 sendError(exchange, e.getMessage(), 500);
             }
