@@ -2,7 +2,8 @@ package com.memdiag.web.controller;
 
 import com.memdiag.core.heap.HeapHistogram;
 import com.memdiag.web.service.AnalysisService;
-import org.springframework.beans.factory.annotation.Autowired;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.messaging.simp.SimpMessagingTemplate;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Controller;
@@ -12,11 +13,15 @@ import java.util.Map;
 @Controller
 public class RealtimeController {
 
-    @Autowired
-    private SimpMessagingTemplate messagingTemplate;
+    private static final Logger logger = LoggerFactory.getLogger(RealtimeController.class);
 
-    @Autowired
-    private AnalysisService analysisService;
+    private final SimpMessagingTemplate messagingTemplate;
+    private final AnalysisService analysisService;
+
+    public RealtimeController(SimpMessagingTemplate messagingTemplate, AnalysisService analysisService) {
+        this.messagingTemplate = messagingTemplate;
+        this.analysisService = analysisService;
+    }
 
     @Scheduled(fixedRate = 5000)
     public void sendRealtimeUpdates() {
@@ -27,7 +32,7 @@ public class RealtimeController {
                 HeapHistogram histogram = analysisService.getHistogram(id, 10);
                 messagingTemplate.convertAndSend("/topic/histogram/" + id, histogram);
             } catch (Exception e) {
-                // Ignore errors for individual connections
+                logger.warn("Error sending update for connection: {}", id, e);
             }
         }
     }
