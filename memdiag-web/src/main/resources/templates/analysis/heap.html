@@ -13,7 +13,7 @@
                         <div class="d-flex align-items-center gap-3">
                             <i class="bi bi-info-circle" style="font-size: 1.5rem; color: var(--info-color);"></i>
                             <div>
-                                <strong>连接:</strong> <span id="connectionName">-</span>
+                                <strong>连接:</strong> <span id="connectionName" th:text="${connectionId}">-</span>
                                 <span class="badge badge-success" id="connectionStatus" style="margin-left: 10px;">在线</span>
                             </div>
                         </div>
@@ -138,9 +138,9 @@
     </div>
 
     <script th:src="@{/js/memdiag.js}"></script>
-    <script th:fragment="scripts">
-        // Use the global connectionId from layout
-        let connectionId = currentConnectionId;
+    <script th:inline="javascript" th:fragment="scripts">
+        // Get connectionId directly from template
+        let connectionId = /*[[${connectionId}]]*/ null;
         let pieChart = null;
         let barChart = null;
         let allClasses = [];
@@ -151,12 +151,6 @@
         ];
 
         document.addEventListener('DOMContentLoaded', function() {
-            // Only set connectionName if connectionId is already available
-            // Otherwise, layout.html's loadConnections() will set it after fetching connections
-            if (connectionId) {
-                document.getElementById('connectionName').textContent = connectionId;
-            }
-
             // Wait for Chart.js to be available
             if (typeof Chart === 'undefined') {
                 // Poll for Chart availability

@@ -12,7 +12,7 @@
                         <div class="d-flex align-items-center gap-3">
                             <i class="bi bi-info-circle" style="font-size: 1.5rem; color: var(--info-color);"></i>
                             <div>
-                                <strong>连接:</strong> <span id="connectionName">-</strong>
+                                <strong>连接:</strong> <span id="connectionName" th:text="${connectionId}">-</span>
                             </div>
                             <div class="ms-auto">
                                 <button class="btn btn-primary" id="refreshBtn">
@@ -100,18 +100,13 @@
     </div>
 
     <script th:src="@{/js/memdiag.js}"></script>
-    <script th:fragment="scripts">
-        // Use the global connectionId from layout
-        let connectionId = currentConnectionId;
+    <script th:inline="javascript" th:fragment="scripts">
+        // Get connectionId directly from template
+        let connectionId = /*[[${connectionId}]]*/ null;
         let topAllocChart = null;
         let trendChart = null;
 
         document.addEventListener('DOMContentLoaded', function() {
-            // Only set connectionName if connectionId is already available
-            // Otherwise, layout.html's loadConnections() will set it after fetching connections
-            if (connectionId) {
-                document.getElementById('connectionName').textContent = connectionId;
-            }
             document.getElementById('refreshBtn').addEventListener('click', loadAllocations);
             loadAllocations();
         });
