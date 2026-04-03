@@ -6,37 +6,35 @@ wave: 2
 depends_on: ["phase-2-01"]
 files_modified:
   - memdiag-web/src/main/java/com/memdiag/web/service/ConnectionManager.java
-  - memdiag-web/src/main/java/com/memdiag/web/service/JmxAnalysisService.java
-  - memdiag-web/src/main/java/com/memdiag/web/service/AnalysisService.java
   - memdiag-web/src/test/java/com/memdiag/web/service/ConnectionManagerTest.java
+  - memdiag-web/src/main/java/com/memdiag/web/service/JmxAnalysisService.java
 autonomous: true
-requirements: [R-DEBT-002, R-TEST-001]
+requirements: [R-DEBT-001, R-DEBT-002, R-TEST-001]
 user_setup: []
 
 must_haves:
   truths:
     - "Connection lifecycle is managed by ConnectionManager"
-    - "JMX analysis logic is isolated in JmxAnalysisService"
-    - "AnalysisService delegates core tasks to specialized services"
+    - "JmxAnalysisService contains core JMX logic"
+    - "New services use constructor injection"
   artifacts:
     - path: "memdiag-web/src/main/java/com/memdiag/web/service/ConnectionManager.java"
       provides: "Thread-safe connection storage and lifecycle management"
+    - path: "memdiag-web/src/test/java/com/memdiag/web/service/ConnectionManagerTest.java"
+      provides: "Unit test for ConnectionManager with 80%+ coverage"
     - path: "memdiag-web/src/main/java/com/memdiag/web/service/JmxAnalysisService.java"
       provides: "JMX-specific heap, thread, and NMT analysis"
   key_links:
-    - from: "AnalysisService.java"
-      to: "ConnectionManager"
-      via: "Constructor injection"
-    - from: "AnalysisService.java"
-      to: "JmxAnalysisService"
+    - from: "ConnectionManager.java"
+      to: "MemDiagProperties"
       via: "Constructor injection"
 ---
 
 <objective>
-Extract connection management and JMX analysis from the monolithic AnalysisService.
+Extract connection management and JMX analysis logic from the monolithic AnalysisService.
 
 Purpose: Reduce AnalysisService size and improve maintainability by following the Single Responsibility Principle.
-Output: Two new focused services and a partially refactored AnalysisService.
+Output: Two new focused services and a unit test for ConnectionManager.
 </objective>
 
 <execution_context>
@@ -49,6 +47,7 @@ Output: Two new focused services and a partially refactored AnalysisService.
 @.planning/ROADMAP.md
 @.planning/STATE.md
 @.planning/phase-2/RESEARCH.md
+@.planning/phase-2/VALIDATION.md
 @memdiag-web/src/main/java/com/memdiag/web/service/AnalysisService.java
 </context>
 
@@ -73,7 +72,7 @@ Output: Two new focused services and a partially refactored AnalysisService.
 </task>
 
 <task type="auto" tdd="true">
-  <name>Task 2: Test ConnectionManager</name>
+  <name>Task 2: Unit Test ConnectionManager</name>
   <files>
     memdiag-web/src/test/java/com/memdiag/web/service/ConnectionManagerTest.java
   </files>
@@ -82,49 +81,50 @@ Output: Two new focused services and a partially refactored AnalysisService.
     - Can register and retrieve an Agent connection.
     - Can disconnect a connection.
     - Returns correct connection type for a given ID.
+    - Target: 80%+ line coverage.
   </behavior>
   <action>
     Create a unit test for `ConnectionManager` using JUnit 5 and Mockito.
-    Mock `JmxClient` and `AgentClient` as needed.
+    Mock `JmxClient`, `AgentClient`, and `MemDiagProperties`.
+    Verify all core connection management scenarios.
   </action>
   <verify>
     <automated>mvn test -Dtest=ConnectionManagerTest -pl memdiag-web</automated>
   </verify>
-  <done>ConnectionManager is verified with tests.</done>
+  <done>ConnectionManager is verified with tests achieving 80%+ coverage.</done>
 </task>
 
 <task type="auto">
-  <name>Task 3: Create JmxAnalysisService and Refactor AnalysisService</name>
+  <name>Task 3: Create JmxAnalysisService</name>
   <files>
     memdiag-web/src/main/java/com/memdiag/web/service/JmxAnalysisService.java
-    memdiag-web/src/main/java/com/memdiag/web/service/AnalysisService.java
   </files>
   <action>
-    1. Create `JmxAnalysisService` with methods: `getHistogram`, `getThreadDump`, `getNmtSnapshot`, `diagnose`.
-       These methods should take a `JmxClient` (and other required context) and perform analysis.
-    2. Refactor `AnalysisService`:
-       - Inject `ConnectionManager` and `JmxAnalysisService` via constructor.
-       - Delegate connection/lifecycle calls to `ConnectionManager`.
-       - Delegate JMX analysis calls to `JmxAnalysisService`.
-       - Keep Agent analysis and Snapshot/GC Roots logic for Wave 3.
+    Create `JmxAnalysisService` by extracting JMX-specific logic from `AnalysisService`.
+    Methods to implement:
+    - `getHistogram(JmxClient client, int limit)`: Uses `JmxHeapAnalyzer`.
+    - `getThreadDump(JmxClient client)`: Uses `ThreadAnalyzer`.
+    - `getNmtSnapshot(JmxClient client, boolean detail)`: Uses `JmxNmtAnalyzer`.
+    - `diagnose(DiagnosisEngine engine)`: Delegates to engine.
+    This service should be stateless and take required dependencies as parameters or via constructor injection if they are persistent.
   </action>
   <verify>
     <automated>mvn compile -pl memdiag-web</automated>
   </verify>
-  <done>AnalysisService is reduced in size and delegates core tasks.</done>
+  <done>JmxAnalysisService exists with extracted JMX logic.</done>
 </task>
 
 </tasks>
 
 <verification>
-Verify that `AnalysisService` still passes existing integration tests (if any) or basic startup.
-Check size of `AnalysisService.java` - target below 400 lines.
+`mvn test -Dtest=ConnectionManagerTest -pl memdiag-web` passes.
+Check for constructor injection in `ConnectionManager.java`.
 </verification>
 
 <success_criteria>
-- `ConnectionManager` and `JmxAnalysisService` are implemented and tested.
-- `AnalysisService` is smaller and cleaner.
-- Constructor injection is strictly used in new and refactored classes.
+- `ConnectionManager` and `JmxAnalysisService` are implemented.
+- `ConnectionManager` has 80%+ test coverage.
+- Constructor injection is strictly used in new classes.
 </success_criteria>
 
 <output>

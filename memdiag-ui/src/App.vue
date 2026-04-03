@@ -1,88 +1,77 @@
+<script setup>
+import { onMounted } from 'vue'
+import Layout from './components/Layout.vue'
+import Toast from 'primevue/toast'
+import { useConnectionStore } from './stores/connectionStore'
+
+const connectionStore = useConnectionStore()
+
+onMounted(() => {
+  // Initialize global connection data once on app start
+  connectionStore.fetchConnections()
+})
+</script>
+
 <template>
-  <div id="app">
-    <header class="header">
-      <h1>MemDiag</h1>
-      <p class="subtitle">JVM Memory Diagnosis Tool</p>
-    </header>
-    <nav class="nav">
-      <router-link to="/">Dashboard</router-link>
-      <router-link to="/histogram">Heap Histogram</router-link>
-      <router-link to="/diagnose">Diagnosis</router-link>
-      <router-link to="/threads">Threads</router-link>
-      <router-link to="/nmt">NMT</router-link>
-    </nav>
-    <main class="main">
-      <router-view />
-    </main>
+  <div class="app-root">
+    <Toast />
+    <Layout>
+      <router-view v-slot="{ Component }">
+        <transition 
+          name="fade" 
+          mode="out-in"
+        >
+          <component :is="Component" />
+        </transition>
+      </router-view>
+    </Layout>
   </div>
 </template>
 
-<script>
-export default {
-  name: 'App'
-}
-</script>
-
 <style>
-* {
-  margin: 0;
-  padding: 0;
-  box-sizing: border-box;
+/* Global resets and utility classes handled by style.css + tailwind */
+
+.fade-enter-active,
+.fade-leave-active {
+  transition: opacity 0.2s ease;
 }
 
-body {
-  font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, sans-serif;
-  background: #f5f7fa;
-  color: #333;
+.fade-enter-from,
+.fade-leave-to {
+  opacity: 0;
 }
 
-#app {
-  min-height: 100vh;
+/* Custom scrollbar for better look */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
 }
 
-.header {
-  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-  color: white;
-  padding: 2rem;
-  text-align: center;
+::-webkit-scrollbar-track {
+  background: transparent;
 }
 
-.header h1 {
-  font-size: 2.5rem;
-  margin-bottom: 0.5rem;
+::-webkit-scrollbar-thumb {
+  background-color: #e2e8f0; /* bg-slate-200 */
+  border-radius: 9999px;
 }
 
-.subtitle {
-  opacity: 0.9;
-  font-size: 1.1rem;
+::-webkit-scrollbar-thumb:hover {
+  background-color: #cbd5e1; /* bg-slate-300 */
 }
 
-.nav {
-  background: white;
-  padding: 1rem 2rem;
-  display: flex;
-  gap: 2rem;
-  box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+/* Helper classes without @apply to avoid build issues in v4 */
+.card-glass {
+  background-color: rgba(255, 255, 255, 0.8);
+  backdrop-filter: blur(12px);
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  box-shadow: 0 20px 25px -5px rgba(226, 232, 240, 0.5);
 }
 
-.nav a {
-  text-decoration: none;
-  color: #667eea;
-  font-weight: 500;
-  padding: 0.5rem 1rem;
-  border-radius: 4px;
-  transition: all 0.2s;
-}
-
-.nav a:hover,
-.nav a.router-link-exact-active {
-  background: #667eea;
-  color: white;
-}
-
-.main {
-  padding: 2rem;
-  max-width: 1400px;
-  margin: 0 auto;
+.text-gradient {
+  background-clip: text;
+  -webkit-background-clip: text;
+  color: transparent;
+  background-image: linear-gradient(to right, #4f46e5, #7c3aed);
 }
 </style>

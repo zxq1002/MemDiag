@@ -5,45 +5,35 @@ type: execute
 wave: 3
 depends_on: ["phase-2-02"]
 files_modified:
-  - memdiag-web/src/main/java/com/memdiag/web/service/AgentApiService.java
-  - memdiag-web/src/main/java/com/memdiag/web/service/SnapshotService.java
-  - memdiag-web/src/main/java/com/memdiag/web/service/GcRootsService.java
-  - memdiag-web/src/main/java/com/memdiag/web/controller/ApiController.java
+  - memdiag-web/src/test/java/com/memdiag/web/service/JmxAnalysisServiceTest.java
   - memdiag-web/src/main/java/com/memdiag/web/service/AnalysisService.java
-  - memdiag-web/src/test/java/com/memdiag/web/controller/ApiControllerIntegrationTest.java
 autonomous: true
-requirements: [R-DEBT-002, R-TEST-001, R-TEST-002]
+requirements: [R-DEBT-001, R-DEBT-002, R-TEST-001]
 user_setup: []
 
 must_haves:
   truths:
-    - "Agent API calls are isolated in AgentApiService"
-    - "Snapshot operations are managed by SnapshotService"
-    - "GC Roots operations are handled by GcRootsService"
-    - "ApiController uses specialized services directly"
-    - "API contract is maintained and verified with tests"
+    - "JmxAnalysisService is verified with unit tests"
+    - "AnalysisService delegates connection and JMX tasks"
   artifacts:
-    - path: "memdiag-web/src/main/java/com/memdiag/web/service/AgentApiService.java"
-      provides: "Agent communication layer"
-    - path: "memdiag-web/src/main/java/com/memdiag/web/service/SnapshotService.java"
-      provides: "Snapshot creation and management"
-    - path: "memdiag-web/src/main/java/com/memdiag/web/service/GcRootsService.java"
-      provides: "GC Roots tracking and analysis"
+    - path: "memdiag-web/src/test/java/com/memdiag/web/service/JmxAnalysisServiceTest.java"
+      provides: "Unit test for JmxAnalysisService with 80%+ coverage"
+    - path: "memdiag-web/src/main/java/com/memdiag/web/service/AnalysisService.java"
+      provides: "AnalysisService partially refactored to delegate to specialized services"
   key_links:
-    - from: "ApiController.java"
-      to: "AgentApiService"
+    - from: "AnalysisService.java"
+      to: "ConnectionManager"
       via: "Constructor injection"
-    - from: "ApiController.java"
-      to: "SnapshotService"
+    - from: "AnalysisService.java"
+      to: "JmxAnalysisService"
       via: "Constructor injection"
 ---
 
 <objective>
-Complete the AnalysisService split by extracting Agent, Snapshot, and GC Roots logic.
-Refactor ApiController to use these specialized services directly.
+Verify JmxAnalysisService and refactor AnalysisService to delegate connection and JMX-specific logic.
 
-Purpose: Finalize the tech debt reduction and establish a robust, testable service layer.
-Output: Specialized services for all core features and a refactored API controller.
+Purpose: Continue the monolithic service split and ensure high quality through testing.
+Output: Tested JmxAnalysisService and a thinner AnalysisService.
 </objective>
 
 <execution_context>
@@ -56,99 +46,65 @@ Output: Specialized services for all core features and a refactored API controll
 @.planning/ROADMAP.md
 @.planning/STATE.md
 @.planning/phase-2/RESEARCH.md
-@memdiag-web/src/main/java/com/memdiag/web/service/AnalysisService.java
-@memdiag-web/src/main/java/com/memdiag/web/controller/ApiController.java
+@.planning/phase-2/VALIDATION.md
+@memdiag-web/src/main/java/com/memdiag/web/service/JmxAnalysisService.java
+@memdiag-web/src/main/java/com/memdiag/web/service/ConnectionManager.java
 </context>
 
 <tasks>
 
-<task type="auto">
-  <name>Task 1: Create Specialized Services</name>
-  <files>
-    memdiag-web/src/main/java/com/memdiag/web/service/AgentApiService.java
-    memdiag-web/src/main/java/com/memdiag/web/service/SnapshotService.java
-    memdiag-web/src/main/java/com/memdiag/web/service/GcRootsService.java
-  </files>
-  <action>
-    Extract remaining logic from `AnalysisService`:
-    1. Create `AgentApiService`: Proxy all `getAgentStatus`, `getAgentConfig`, `getNativeSummary` etc. calls to `AgentClient`.
-    2. Create `SnapshotService`: Implement `createSnapshot`, `listSnapshots`, `loadSnapshot`, `deleteSnapshot`.
-    3. Create `GcRootsService`: Implement `getGcRootStats`, `startGcRootTracking`, `stopGcRootTracking`.
-    Use constructor injection for all dependencies (`ConnectionManager`, `JmxAnalysisService`, `MemDiagProperties`).
-  </action>
-  <verify>
-    <automated>mvn compile -pl memdiag-web</automated>
-  </verify>
-  <done>Specialized services exist and are properly injected.</done>
-</task>
-
-<task type="auto">
-  <name>Task 2: Refactor ApiController to use Specialized Services</name>
-  <files>
-    memdiag-web/src/main/java/com/memdiag/web/controller/ApiController.java
-  </files>
-  <action>
-    Refactor `ApiController` to use the new specialized services instead of the monolithic `AnalysisService`.
-    Dependencies to inject: `ConnectionManager`, `JmxAnalysisService`, `AgentApiService`, `SnapshotService`, `GcRootsService`, `MemDiagProperties`.
-    Update all endpoints to call the appropriate service method.
-    Maintain the existing API contract (response format, HTTP codes).
-  </action>
-  <verify>
-    <automated>mvn compile -pl memdiag-web</automated>
-  </verify>
-  <done>ApiController is decoupled from AnalysisService facade.</done>
-</task>
-
 <task type="auto" tdd="true">
-  <name>Task 3: Integration Tests for ApiController</name>
+  <name>Task 1: Unit Test JmxAnalysisService</name>
   <files>
-    memdiag-web/src/test/java/com/memdiag/web/controller/ApiControllerIntegrationTest.java
+    memdiag-web/src/test/java/com/memdiag/web/service/JmxAnalysisServiceTest.java
   </files>
   <behavior>
-    - GET /api/v1/connections returns list of connections.
-    - POST /api/v1/connections/{id} connects correctly.
-    - GET /api/v1/histogram/{id} returns histogram data.
-    - Snapshot creation and listing works.
+    - Correctly retrieves heap histogram from JmxClient.
+    - Correctly retrieves thread dump from JmxClient.
+    - Correctly retrieves NMT summary/detail snapshots.
+    - Correctly delegates diagnosis to DiagnosisEngine.
+    - Target: 80%+ line coverage.
   </behavior>
   <action>
-    Create integration tests for `ApiController` using `MockMvc`.
-    Extend `AbstractControllerTest`.
-    Mock the service layer to verify controller behavior and API contract.
-    Target 80%+ coverage for `ApiController`.
+    Create a unit test for `JmxAnalysisService` using JUnit 5 and Mockito.
+    Mock `JmxClient`, `HeapAnalyzer`, `ThreadAnalyzer`, `JmxNmtAnalyzer`, and `DiagnosisEngine`.
+    Verify all analysis methods return expected data from the underlying core components.
   </action>
   <verify>
-    <automated>mvn test -Dtest=ApiControllerIntegrationTest -pl memdiag-web</automated>
+    <automated>mvn test -Dtest=JmxAnalysisServiceTest -pl memdiag-web</automated>
   </verify>
-  <done>ApiController contract is verified with tests.</done>
+  <done>JmxAnalysisService is verified with tests achieving 80%+ coverage.</done>
 </task>
 
 <task type="auto">
-  <name>Task 4: Final Cleanup and AnalysisService Deprecation</name>
+  <name>Task 2: Refactor AnalysisService Delegation</name>
   <files>
     memdiag-web/src/main/java/com/memdiag/web/service/AnalysisService.java
   </files>
   <action>
-    If any classes (like `RealtimeController`) still use `AnalysisService`, refactor them to use specialized services.
-    Once `AnalysisService` has no consumers, delete it.
-    If it must remain as a facade, ensure it delegates all calls to the new services.
+    1. Update `AnalysisService` to inject `ConnectionManager` and `JmxAnalysisService` via constructor.
+    2. Replace internal connection maps with calls to `ConnectionManager`.
+    3. Update `connect`, `disconnect`, `getConnectionType`, etc. to delegate to `ConnectionManager`.
+    4. Update `getHistogram`, `getThreads`, `getNmtSnapshot`, and `diagnose` to delegate JMX-specific calls to `JmxAnalysisService`.
+    5. Maintain Agent analysis, Snapshot, and GC Roots logic in `AnalysisService` for now (to be split in subsequent plans).
   </action>
   <verify>
     <automated>mvn compile -pl memdiag-web</automated>
   </verify>
-  <done>Monolithic AnalysisService is removed or fully delegated.</done>
+  <done>AnalysisService delegates core connection and JMX tasks to specialized services.</done>
 </task>
 
 </tasks>
 
 <verification>
-Run all tests in `memdiag-web`: `mvn test -pl memdiag-web`
-Verify coverage using Jacoco or manual review.
+`mvn test -Dtest=JmxAnalysisServiceTest -pl memdiag-web` passes.
+Compile entire module: `mvn compile -pl memdiag-web`.
 </verification>
 
 <success_criteria>
-- No monolithic `AnalysisService` exists.
-- `ApiController` is fully test-covered.
-- Functional parity maintained across all endpoints.
+- `JmxAnalysisService` has 80%+ coverage.
+- `AnalysisService` has constructor injection for its new dependencies.
+- Parity maintained for JMX-related features.
 </success_criteria>
 
 <output>

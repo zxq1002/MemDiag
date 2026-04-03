@@ -116,28 +116,29 @@ This roadmap defines the phase structure for addressing known issues and enhanci
 
 ---
 
-## Phase 5: Diagnosis & Threads Views
+## Phase 5: Diagnosis & Threads Views Enhancement
 
-**Goal:** Enhance diagnosis results and thread analysis views
+**Goal:** Professionalize the health monitoring views with modular components and advanced filtering.
 
 **Duration:** 1 phase
 **Priority:** Medium
 
-**Tasks:**
-1. Severity-based coloring for diagnosis issues
-2. Expandable sections for recommendations
-3. Thread stack trace viewing
-4. Thread state filtering
+**Plans:** 3 plans
+- [ ] phase-5-01-PLAN.md — Composable Extraction (useDiagnosis, useThreads) & Testing
+- [ ] phase-5-02-PLAN.md — Diagnosis View Componentization & Severity Filtering
+- [ ] phase-5-03-PLAN.md — Threads View Refactor & Syntax-Highlighted StackTraceViewer
 
 **Deliverables:**
-- Enhanced diagnosis display
-- Full thread stack trace view
-- Thread filtering capabilities
+- Reusable logic in `useDiagnosis.js` and `useThreads.js`
+- Professional Diagnosis UI with severity filtering
+- Enhanced Threads UI with state filtering and colored stack traces
+- Modular component architecture for health views
 
 **Acceptance Criteria:**
-- [ ] Issues colored by severity
-- [ ] Can see full thread stacks
-- [ ] Can filter threads by state
+- [ ] Diagnosis issues filtered by severity (Critical, Warning, Info)
+- [ ] Thread list filtered by state and searchable by name
+- [ ] Stack traces color-coded for improved readability
+- [ ] Business logic extracted and 80%+ unit test coverage for new composables
 
 ---
 

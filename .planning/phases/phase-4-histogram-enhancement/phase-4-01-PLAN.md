@@ -12,116 +12,70 @@ autonomous: true
 requirements: [R-UI-002]
 must_haves:
   truths:
-    - "Histogram logic is extracted from components into a reusable composable"
-    - "Unit tests verify that data fetching and mapping work correctly"
-    - "Test infrastructure (Vitest) is configured and running"
+    - "Histogram fetching and formatting logic is isolated from the UI component"
+    - "Composable logic is verified by automated tests"
   artifacts:
     - path: "memdiag-ui/src/composables/useHistogram.js"
-      provides: "Reactive histogram state and fetch logic"
-    - path: "memdiag-ui/src/composables/__tests__/useHistogram.test.js"
-      provides: "Automated verification of composable logic"
-  key_links:
-    - from: "memdiag-ui/src/composables/useHistogram.js"
-      to: "/api/v1/histogram"
-      via: "axios.get"
+      provides: "Stateless histogram management logic"
 ---
 
 <objective>
-Initialize the testing infrastructure and extract the core histogram data management logic into a reusable Vue composable. This improves maintainability and allows for automated testing of the business logic independent of the UI.
+Extract histogram data management logic into a reusable Composable and establish the testing infrastructure for frontend logic.
+Purpose: Decouple business logic from the UI and ensure reliability via unit tests.
+Output: `useHistogram.js` and its corresponding test suite.
 </objective>
-
-<execution_context>
-@$HOME/.gemini/get-shit-done/workflows/execute-plan.md
-</execution_context>
-
-<context>
-@.planning/PROJECT.md
-@.planning/ROADMAP.md
-@.planning/REQUIREMENTS.md
-@.planning/phases/phase-4-histogram-enhancement/04-RESEARCH.md
-@memdiag-ui/src/views/Histogram.vue
-</context>
-
-<interfaces>
-From memdiag-ui/src/views/Histogram.vue:
-```javascript
-const loadHistogram = async () => {
-  if (!selectedConn.value) return
-  isLoading.value = true
-  try {
-    const response = await axios.get(`/api/v1/histogram/${selectedConn.value}`, { 
-      params: { limit: limit.value } 
-    })
-    histogram.value = response.data
-    // ...
-  } finally {
-    isLoading.value = false
-  }
-}
-```
-</interfaces>
 
 <tasks>
 
 <task type="auto">
-  <name>Task 1: Initialize Vitest Infrastructure</name>
+  <name>Task 1: Setup Vitest Configuration</name>
   <files>memdiag-ui/vitest.config.js</files>
   <action>
-    Create a basic Vitest configuration file in the UI module. Ensure it handles Vue SFCs and JSDOM environment.
-    Reference: memdiag-ui/package.json already has vitest dependency.
+    Create `vitest.config.js` in `memdiag-ui` root. 
+    Configure it to use `jsdom` environment and handle Vue components if needed (though this plan focuses on composables).
   </action>
   <verify>
-    <automated>cd memdiag-ui && npx vitest --version</automated>
+    <automated>cd memdiag-ui && npx vitest run --passWithNoTests</automated>
   </verify>
-  <done>Vitest command runs without configuration errors.</done>
+  <done>Vitest is configured and runnable.</done>
 </task>
 
 <task type="auto">
-  <name>Task 2: Extract useHistogram Composable</name>
+  <name>Task 2: Implement useHistogram Composable</name>
   <files>memdiag-ui/src/composables/useHistogram.js</files>
   <action>
-    Extract the logic from Histogram.vue (lines 19-65 approx) into a dedicated composable.
-    - state: histogram, isLoading, limit
-    - computed: classStats, totalObjects, totalBytes
-    - methods: load (accepts connectionId)
-    Ensure it handles both { data: { classes: [] } } and { classes: [] } response formats found in the existing code.
+    Create `useHistogram` composable.
+    - Expose `loadHistogram(connectionId, limit)` function.
+    - Handle `isLoading`, `error`, and `histogram` state.
+    - Include helper functions like `formatBytes` and `formatNumber` (extracted from Histogram.vue).
+    - Map API response fields consistently.
   </action>
   <verify>
-    <automated>test -f memdiag-ui/src/composables/useHistogram.js</automated>
+    <automated>Check file content for reactive state and exported methods.</automated>
   </verify>
-  <done>Composable exported with required reactive state and methods.</done>
+  <done>Composable logic is implemented and exported.</done>
 </task>
 
-<task type="auto" tdd="true">
-  <name>Task 3: Implement Unit Tests for useHistogram</name>
+<task type="auto">
+  <name>Task 3: Create useHistogram unit tests</name>
   <files>memdiag-ui/src/composables/__tests__/useHistogram.test.js</files>
-  <behavior>
-    - Should initialize with default values (isLoading=false, histogram=null)
-    - Should fetch data from API and update state
-    - Should correctly compute classStats, totalObjects, and totalBytes from various response formats
-    - Should handle API errors gracefully
-  </behavior>
   <action>
-    Write unit tests using Vitest and @vue/test-utils (or just standard Vue reactivity if testing the composable in isolation). Use vi.mock('axios') to simulate API responses.
+    Write tests for `useHistogram`:
+    - Verify `formatBytes` with various inputs.
+    - Mock Axios and verify `loadHistogram` updates state correctly on success and failure.
   </action>
   <verify>
-    <automated>cd memdiag-ui && npm run test -- useHistogram</automated>
+    <automated>cd memdiag-ui && npx vitest run src/composables/__tests__/useHistogram.test.js</automated>
   </verify>
-  <done>All tests pass with 100% coverage of the composable logic.</done>
+  <done>Tests pass and cover core formatting and fetching logic.</done>
 </task>
 
 </tasks>
 
 <verification>
-Run all unit tests in the UI module: `cd memdiag-ui && npm run test`.
+Ensure all unit tests pass and the composable is ready for integration.
 </verification>
 
 <success_criteria>
-- `useHistogram.js` exists and is fully tested.
-- `vitest.config.js` exists.
-- Business logic is successfully decoupled from the `Histogram.vue` view.
+Logic is successfully extracted and verified with >80% coverage.
 </success_criteria>
-
-<output>
-After completion, create `.planning/phases/phase-4-histogram-enhancement/phase-4-01-SUMMARY.md`
-</output>

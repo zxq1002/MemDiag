@@ -31,4 +31,5 @@ echo "----------------------------------------------------------"
 docker run --name memdiag-uat --rm \
     --platform linux/amd64 \
     --cap-add=SYS_PTRACE \
+    -p 6789:6789 \
     memdiag-uat "$MODE" "$LIMIT" "$RATE"

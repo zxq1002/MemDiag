@@ -12,7 +12,7 @@ files_modified:
   - memdiag-web/src/main/java/com/memdiag/web/controller/RealtimeController.java
   - memdiag-web/src/main/resources/application.properties
 autonomous: true
-requirements: [R-DEBT-003, R-TEST-001]
+requirements: [R-DEBT-001, R-DEBT-003, R-TEST-001]
 user_setup: []
 
 must_haves:
@@ -54,6 +54,7 @@ Output: A working test suite scaffold and a central configuration system.
 @.planning/ROADMAP.md
 @.planning/STATE.md
 @.planning/phase-2/RESEARCH.md
+@.planning/phase-2/VALIDATION.md
 @memdiag-web/src/main/java/com/memdiag/web/service/AnalysisService.java
 @memdiag-web/src/main/java/com/memdiag/web/controller/RealtimeController.java
 </context>
@@ -69,7 +70,7 @@ Output: A working test suite scaffold and a central configuration system.
     Create the directory structure `memdiag-web/src/test/java/com/memdiag/web/controller/`.
     Implement `AbstractControllerTest` using `@SpringBootTest` and `MockMvc`.
     This class will provide the base MockMvc setup for all controller tests.
-    Ensure it uses JUnit 5 and AssertJ as per RESEARCH.md.
+    Ensure it uses JUnit 5 and AssertJ as per RESEARCH.md and VALIDATION.md.
   </action>
   <verify>
     <automated>mvn test-compile -pl memdiag-web</automated>

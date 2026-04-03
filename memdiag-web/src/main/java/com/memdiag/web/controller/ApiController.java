@@ -1,5 +1,6 @@
 package com.memdiag.web.controller;
 
+import com.google.gson.JsonArray;
 import com.google.gson.JsonObject;
 import com.google.gson.Gson;
 import com.memdiag.core.diagnose.DiagnosisResult;
@@ -7,26 +8,37 @@ import com.memdiag.core.diagnose.Issue;
 import com.memdiag.core.diagnose.Recommendation;
 import com.memdiag.core.heap.HeapHistogram;
 import com.memdiag.core.heap.ClassStats;
+import com.memdiag.core.nmt.NmtMemoryUsage;
 import com.memdiag.core.nmt.NmtSnapshot;
 import com.memdiag.core.thread.ThreadDump;
 import com.memdiag.core.thread.ThreadStats;
-import com.memdiag.web.service.AnalysisService;
+import com.memdiag.core.util.JmxClient;
+import com.memdiag.web.config.MemDiagProperties;
+import com.memdiag.web.service.*;
 import com.memdiag.web.validation.AddressValidator;
 import com.memdiag.web.validation.PidValidator;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
+import java.time.Instant;
+import java.time.format.DateTimeFormatter;
 import java.util.Map;
 
 @RestController
-@RequestMapping("/api/v1")
+@RequestMapping(value = "/api/v1", produces = MediaType.APPLICATION_JSON_VALUE)
 public class ApiController {
 
     private static final Logger logger = LoggerFactory.getLogger(ApiController.class);
 
-    private static final Gson gson = new Gson();
+    private static final Gson gson = new com.google.gson.GsonBuilder()
+            .registerTypeAdapter(Instant.class, (com.google.gson.JsonSerializer<Instant>) (src, typeOfSrc, context) -> 
+                new com.google.gson.JsonPrimitive(src.toString()))
+            .registerTypeAdapter(Instant.class, (com.google.gson.JsonDeserializer<Instant>) (json, typeOfT, context) -> 
+                Instant.parse(json.getAsString()))
+            .create();
 
     private static final String ERROR_HISTOGRAM = "Failed to retrieve histogram";
     private static final String ERROR_DIAGNOSIS = "Failed to perform diagnosis";
@@ -59,10 +71,25 @@ public class ApiController {
     private static final String ERROR_SNAPSHOT_LIST = "Failed to list snapshots";
     private static final String ERROR_SNAPSHOT_DELETE = "Failed to delete snapshot";
 
-    private final AnalysisService analysisService;
+    private final ConnectionManager connectionManager;
+    private final JmxAnalysisService jmxAnalysisService;
+    private final AgentApiService agentApiService;
+    private final SnapshotService snapshotService;
+    private final GcRootsService gcRootsService;
+    private final MemDiagProperties properties;
 
-    public ApiController(AnalysisService analysisService) {
-        this.analysisService = analysisService;
+    public ApiController(ConnectionManager connectionManager,
+                         JmxAnalysisService jmxAnalysisService,
+                         AgentApiService agentApiService,
+                         SnapshotService snapshotService,
+                         GcRootsService gcRootsService,
+                         MemDiagProperties properties) {
+        this.connectionManager = connectionManager;
+        this.jmxAnalysisService = jmxAnalysisService;
+        this.agentApiService = agentApiService;
+        this.snapshotService = snapshotService;
+        this.gcRootsService = gcRootsService;
+        this.properties = properties;
     }
 
     private ResponseEntity<String> validationError(String message) {
@@ -78,7 +105,7 @@ public class ApiController {
     @GetMapping("/connections")
     public ResponseEntity<String> getConnections() {
         try {
-            return ResponseEntity.ok(gson.toJson(analysisService.getConnections()));
+            return ResponseEntity.ok(gson.toJson(connectionManager.getConnections()));
         } catch (Exception e) {
             logger.error("Error getting connections", e);
             return ResponseEntity.badRequest().body(gson.toJson(errorResponse(ERROR_GENERIC)));
@@ -88,25 +115,32 @@ public class ApiController {
     @PostMapping("/connections/{id}")
     public ResponseEntity<String> connect(
             @PathVariable String id,
-            @RequestParam(required = false) String target) {
-        if (target != null && !target.isEmpty()) {
-            if (!AddressValidator.isValid(target)) {
-                logger.warn("Invalid target address: {}", target);
-                return validationError(AddressValidator.getErrorMessage(target));
+            @RequestParam(required = false) String target,
+            @RequestParam(required = false) String pid) {
+        
+        String effectiveTarget = target != null ? target : pid;
+
+        if (effectiveTarget != null && !effectiveTarget.isEmpty()) {
+            if (!AddressValidator.isValid(effectiveTarget)) {
+                logger.warn("Invalid target address: {}", effectiveTarget);
+                return validationError(AddressValidator.getErrorMessage(effectiveTarget));
             }
         }
 
         try {
-            boolean success = analysisService.connect(id, target);
+            boolean success = connectionManager.connect(id, effectiveTarget);
             JsonObject result = new JsonObject();
+            result.addProperty("success", success);
+            result.addProperty("id", id);
+            result.addProperty("timestamp", System.currentTimeMillis());
+            
             if (success) {
-                result.addProperty("status", "connected");
+                return ResponseEntity.ok(gson.toJson(result));
             } else {
-                result.addProperty("error", "Failed to connect");
+                return ResponseEntity.badRequest().body(gson.toJson(errorResponse(ERROR_CONNECTION)));
             }
-            return ResponseEntity.ok(gson.toJson(result));
         } catch (Exception e) {
-            logger.error("Error connecting to target: {}", target, e);
+            logger.error("Error connecting to id: {}", id, e);
             return ResponseEntity.badRequest().body(gson.toJson(errorResponse(ERROR_CONNECTION)));
         }
     }
@@ -114,48 +148,59 @@ public class ApiController {
     @DeleteMapping("/connections/{id}")
     public ResponseEntity<String> disconnect(@PathVariable String id) {
         try {
-            analysisService.disconnect(id);
+            connectionManager.disconnect(id);
             JsonObject result = new JsonObject();
-            result.addProperty("status", "disconnected");
+            result.addProperty("success", true);
+            result.addProperty("id", id);
+            result.addProperty("timestamp", System.currentTimeMillis());
             return ResponseEntity.ok(gson.toJson(result));
         } catch (Exception e) {
-            logger.error("Error disconnecting connection: {}", id, e);
+            logger.error("Error disconnecting id: {}", id, e);
             return ResponseEntity.badRequest().body(gson.toJson(errorResponse(ERROR_GENERIC)));
         }
     }
 
-    // ========== Core Analysis (dual mode: JMX or Agent) ==========
+    // ========== Core Analysis API ==========
 
-    @GetMapping({"/histogram/{id}", "/connections/{id}/histogram"})
+    @GetMapping("/histogram/{id}")
     public ResponseEntity<String> getHistogram(
             @PathVariable String id,
             @RequestParam(defaultValue = "20") int limit) {
-        if (!isConnectionId(id) && !PidValidator.isValid(id)) {
-            logger.warn("Invalid PID: {}", id);
+        if (!isConnectionId(id)) {
+            logger.warn("Invalid connection ID or PID: {}", id);
             return validationError(PidValidator.getErrorMessage(id));
         }
 
         try {
-            HeapHistogram histogram = analysisService.getHistogram(id, limit);
+            HeapHistogram histogram;
+            ConnectionManager.ConnectionType type = connectionManager.getConnectionType(id);
+            if (type == ConnectionManager.ConnectionType.AGENT) {
+                histogram = agentApiService.getHistogram(id, limit);
+            } else {
+                JmxClient client = connectionManager.getJmxClient(id);
+                if (client == null) throw new IllegalArgumentException("No connection found for id: " + id);
+                histogram = jmxAnalysisService.getHistogram(client, limit);
+            }
+
             JsonObject result = new JsonObject();
             result.addProperty("success", true);
             result.addProperty("timestamp", System.currentTimeMillis());
 
             JsonObject data = new JsonObject();
-            data.addProperty("totalBytes", histogram.getTotalBytes());
             data.addProperty("totalObjects", histogram.getTotalObjects());
+            data.addProperty("totalBytes", histogram.getTotalBytes());
 
-            com.google.gson.JsonArray classesArray = new com.google.gson.JsonArray();
-            for (ClassStats entry : histogram.getClassStats()) {
-                JsonObject cls = new JsonObject();
-                cls.addProperty("className", entry.getClassName());
-                cls.addProperty("totalSize", entry.getShallowBytes());
-                cls.addProperty("instanceCount", entry.getObjectCount());
-                classesArray.add(cls);
+            JsonArray classesArray = new JsonArray();
+            for (ClassStats stats : histogram.getClassStats()) {
+                JsonObject item = new JsonObject();
+                item.addProperty("className", stats.getClassName());
+                item.addProperty("objectCount", stats.getObjectCount());
+                item.addProperty("shallowBytes", stats.getShallowBytes());
+                classesArray.add(item);
             }
             data.add("classes", classesArray);
-
             result.add("data", data);
+
             return ResponseEntity.ok(gson.toJson(result));
         } catch (Exception e) {
             logger.error("Error getting histogram for id: {}", id, e);
@@ -163,211 +208,203 @@ public class ApiController {
         }
     }
 
-    @GetMapping({"/diagnose/{id}", "/connections/{id}/diagnose"})
+    @GetMapping("/diagnose/{id}")
     public ResponseEntity<String> diagnose(@PathVariable String id) {
-        if (!isConnectionId(id) && !PidValidator.isValid(id)) {
-            logger.warn("Invalid PID: {}", id);
+        if (!isConnectionId(id)) {
+            logger.warn("Invalid connection ID or PID: {}", id);
             return validationError(PidValidator.getErrorMessage(id));
         }
 
         try {
-            DiagnosisResult result = analysisService.diagnose(id);
-            JsonObject response = new JsonObject();
-            response.addProperty("success", true);
-            response.addProperty("timestamp", System.currentTimeMillis());
+            DiagnosisResult diagnosis;
+            ConnectionManager.ConnectionType type = connectionManager.getConnectionType(id);
+            if (type == ConnectionManager.ConnectionType.AGENT) {
+                diagnosis = agentApiService.getDiagnosis(id);
+            } else {
+                com.memdiag.core.diagnose.DiagnosisEngine engine = connectionManager.getDiagnosisEngine(id);
+                if (engine == null) throw new IllegalArgumentException("No connection found for id: " + id);
+                diagnosis = jmxAnalysisService.diagnose(engine);
+            }
+
+            JsonObject result = new JsonObject();
+            result.addProperty("success", true);
+            result.addProperty("timestamp", System.currentTimeMillis());
 
             JsonObject data = new JsonObject();
-            com.google.gson.JsonArray issuesArray = new com.google.gson.JsonArray();
-            for (Issue issue : result.getIssues()) {
-                JsonObject issueObj = new JsonObject();
-                issueObj.addProperty("title", issue.getTitle());
-                issueObj.addProperty("description", issue.getDescription());
-                issueObj.addProperty("severity", issue.getSeverity().name());
+            data.addProperty("summary", diagnosis.getSummary());
+            data.addProperty("totalHeapUsed", diagnosis.getTotalHeapUsed());
+            data.addProperty("totalHeapCommitted", diagnosis.getTotalHeapCommitted());
+            data.addProperty("threadCount", diagnosis.getThreadCount());
 
-                String recommendation = "";
-                if (issue.getRecommendations() != null && !issue.getRecommendations().isEmpty()) {
-                    Recommendation rec = issue.getRecommendations().get(0);
-                    recommendation = rec.getDescription() != null ? rec.getDescription() : rec.getTitle();
+            JsonArray issuesArray = new JsonArray();
+            for (Issue issue : diagnosis.getIssues()) {
+                JsonObject item = new JsonObject();
+                item.addProperty("severity", issue.getSeverity().name());
+                item.addProperty("type", issue.getType());
+                item.addProperty("title", issue.getTitle());
+                item.addProperty("description", issue.getDescription());
+                
+                JsonArray recsArray = new JsonArray();
+                for (Recommendation rec : issue.getRecommendations()) {
+                    JsonObject recItem = new JsonObject();
+                    recItem.addProperty("priority", rec.getPriority());
+                    recItem.addProperty("title", rec.getTitle());
+                    recItem.addProperty("description", rec.getDescription());
+                    recItem.addProperty("action", rec.getAction());
+                    recsArray.add(recItem);
                 }
-                issueObj.addProperty("recommendation", recommendation);
-                issuesArray.add(issueObj);
+                item.add("recommendations", recsArray);
+                issuesArray.add(item);
             }
             data.add("issues", issuesArray);
-            data.addProperty("summary", result.getSummary());
+            result.add("data", data);
 
-            response.add("data", data);
-            return ResponseEntity.ok(gson.toJson(response));
+            return ResponseEntity.ok(gson.toJson(result));
         } catch (Exception e) {
             logger.error("Error performing diagnosis for id: {}", id, e);
             return ResponseEntity.badRequest().body(gson.toJson(errorResponse(ERROR_DIAGNOSIS)));
         }
     }
 
-    @GetMapping({"/threads/{id}", "/connections/{id}/threads"})
+    @GetMapping("/threads/{id}")
     public ResponseEntity<String> getThreads(@PathVariable String id) {
-        if (!isConnectionId(id) && !PidValidator.isValid(id)) {
-            logger.warn("Invalid PID: {}", id);
+        if (!isConnectionId(id)) {
+            logger.warn("Invalid connection ID or PID: {}", id);
             return validationError(PidValidator.getErrorMessage(id));
         }
 
         try {
-            ThreadDump dump = analysisService.getThreads(id);
-            JsonObject response = new JsonObject();
-            response.addProperty("success", true);
-            response.addProperty("timestamp", System.currentTimeMillis());
+            ThreadDump dump;
+            ConnectionManager.ConnectionType type = connectionManager.getConnectionType(id);
+            if (type == ConnectionManager.ConnectionType.AGENT) {
+                dump = agentApiService.getThreadDump(id);
+            } else {
+                JmxClient client = connectionManager.getJmxClient(id);
+                if (client == null) throw new IllegalArgumentException("No connection found for id: " + id);
+                dump = jmxAnalysisService.getThreadDump(client);
+            }
+
+            JsonObject result = new JsonObject();
+            result.addProperty("success", true);
+            result.addProperty("timestamp", System.currentTimeMillis());
 
             JsonObject data = new JsonObject();
-            com.google.gson.JsonArray threadsArray = new com.google.gson.JsonArray();
+            data.addProperty("threadCount", dump.getThreadStats().size());
 
-            for (ThreadStats thread : dump.getThreadStats()) {
-                JsonObject threadObj = new JsonObject();
-                threadObj.addProperty("id", thread.getThreadId());
-                threadObj.addProperty("name", thread.getThreadName());
-                threadObj.addProperty("state", thread.getState() != null ? thread.getState().name() : "UNKNOWN");
-                threadObj.addProperty("blockedCount", thread.getBlockedCount());
-                threadObj.addProperty("waitedCount", thread.getWaitedCount());
-
-                com.google.gson.JsonArray stackArray = new com.google.gson.JsonArray();
-                if (thread.getStackTrace() != null) {
-                    for (com.memdiag.core.thread.StackFrame frame : thread.getStackTrace()) {
-                        JsonObject frameObj = new JsonObject();
-                        frameObj.addProperty("className", frame.getClassName());
-                        frameObj.addProperty("methodName", frame.getMethodName());
-                        frameObj.addProperty("fileName", frame.getFileName());
-                        frameObj.addProperty("lineNumber", frame.getLineNumber());
-                        frameObj.addProperty("nativeMethod", frame.isNativeMethod());
-                        stackArray.add(frameObj);
-                    }
-                }
-                threadObj.add("stackTrace", stackArray);
-                threadsArray.add(threadObj);
+            JsonArray threadsArray = new JsonArray();
+            for (ThreadStats stats : dump.getThreadStats()) {
+                JsonObject item = new JsonObject();
+                item.addProperty("threadId", stats.getThreadId());
+                item.addProperty("threadName", stats.getThreadName());
+                item.addProperty("state", stats.getState().name());
+                item.addProperty("blockedCount", stats.getBlockedCount());
+                item.addProperty("waitedCount", stats.getWaitedCount());
+                threadsArray.add(item);
             }
             data.add("threads", threadsArray);
-            data.addProperty("timestamp", dump.getTimestamp() != null ? dump.getTimestamp().toString() : null);
+            result.add("data", data);
 
-            response.add("data", data);
-            return ResponseEntity.ok(gson.toJson(response));
+            return ResponseEntity.ok(gson.toJson(result));
         } catch (Exception e) {
             logger.error("Error getting threads for id: {}", id, e);
             return ResponseEntity.badRequest().body(gson.toJson(errorResponse(ERROR_THREADS)));
         }
     }
 
-    @GetMapping({"/nmt/{id}", "/connections/{id}/nmt"})
+    @GetMapping("/nmt/{id}")
     public ResponseEntity<String> getNmt(
             @PathVariable String id,
             @RequestParam(defaultValue = "false") boolean detail) {
-        if (!isConnectionId(id) && !PidValidator.isValid(id)) {
-            logger.warn("Invalid PID: {}", id);
+        if (!isConnectionId(id)) {
+            logger.warn("Invalid connection ID or PID: {}", id);
             return validationError(PidValidator.getErrorMessage(id));
         }
 
         try {
-            NmtSnapshot snapshot = analysisService.getNmtSnapshot(id, detail);
+            NmtSnapshot nmt;
+            ConnectionManager.ConnectionType type = connectionManager.getConnectionType(id);
+            if (type == ConnectionManager.ConnectionType.AGENT) {
+                nmt = agentApiService.getNmtSnapshot(id, detail);
+            } else {
+                JmxClient client = connectionManager.getJmxClient(id);
+                if (client == null) throw new IllegalArgumentException("No connection found for id: " + id);
+                nmt = jmxAnalysisService.getNmtSnapshot(client, detail);
+            }
+
             JsonObject result = new JsonObject();
             result.addProperty("success", true);
             result.addProperty("timestamp", System.currentTimeMillis());
 
             JsonObject data = new JsonObject();
-            data.addProperty("totalReserved", snapshot.getTotalReserved());
-            data.addProperty("totalCommitted", snapshot.getTotalCommitted());
-
-            com.google.gson.JsonArray categories = new com.google.gson.JsonArray();
-            for (com.memdiag.core.nmt.NmtMemoryUsage usage : snapshot.getUsages()) {
-                JsonObject catObj = new JsonObject();
-                catObj.addProperty("name", usage.getCategory().getDisplayName());
-                catObj.addProperty("reserved", usage.getReserved());
-                catObj.addProperty("committed", usage.getCommitted());
-                categories.add(catObj);
+            data.addProperty("totalReserved", nmt.getTotalReserved());
+            data.addProperty("totalCommitted", nmt.getTotalCommitted());
+            
+            JsonArray categoriesArray = new JsonArray();
+            for (NmtMemoryUsage usage : nmt.getUsages()) {
+                JsonObject item = new JsonObject();
+                item.addProperty("name", usage.getCategory().name());
+                item.addProperty("reserved", usage.getReserved());
+                item.addProperty("committed", usage.getCommitted());
+                categoriesArray.add(item);
             }
-            data.add("categories", categories);
-
+            data.add("categories", categoriesArray);
             result.add("data", data);
+
             return ResponseEntity.ok(gson.toJson(result));
         } catch (Exception e) {
-            logger.error("Error getting NMT data for id: {}", id, e);
+            logger.error("Error getting NMT for id: {}", id, e);
             return ResponseEntity.badRequest().body(gson.toJson(errorResponse(ERROR_NMT)));
         }
     }
 
-    // ========== Agent API (Agent mode only) ==========
+    // ========== Agent Management API ==========
 
-    @GetMapping({"/agent/status/{id}", "/connections/{id}/agent/status"})
+    @GetMapping("/agent/status/{id}")
     public ResponseEntity<String> getAgentStatus(@PathVariable String id) {
-        if (!isConnectionId(id) && !PidValidator.isValid(id)) {
-            logger.warn("Invalid PID: {}", id);
-            return validationError(PidValidator.getErrorMessage(id));
-        }
-
         try {
-            JsonObject status = analysisService.getAgentStatus(id);
-            JsonObject result = new JsonObject();
-            result.addProperty("success", true);
-            result.addProperty("timestamp", System.currentTimeMillis());
-            result.add("data", status);
-            return ResponseEntity.ok(gson.toJson(result));
+            return ResponseEntity.ok(gson.toJson(agentApiService.getAgentStatus(id)));
         } catch (Exception e) {
             logger.error("Error getting agent status for id: {}", id, e);
             return ResponseEntity.badRequest().body(gson.toJson(errorResponse(ERROR_AGENT_STATUS)));
         }
     }
 
-    @GetMapping({"/agent/config/{id}", "/connections/{id}/agent/config"})
+    @GetMapping("/agent/config/{id}")
     public ResponseEntity<String> getAgentConfig(@PathVariable String id) {
-        if (!isConnectionId(id) && !PidValidator.isValid(id)) {
-            logger.warn("Invalid PID: {}", id);
-            return validationError(PidValidator.getErrorMessage(id));
-        }
-
         try {
-            JsonObject config = analysisService.getAgentConfig(id);
-            JsonObject result = new JsonObject();
-            result.addProperty("success", true);
-            result.addProperty("timestamp", System.currentTimeMillis());
-            result.add("data", config);
-            return ResponseEntity.ok(gson.toJson(result));
+            return ResponseEntity.ok(gson.toJson(agentApiService.getAgentConfig(id)));
         } catch (Exception e) {
             logger.error("Error getting agent config for id: {}", id, e);
             return ResponseEntity.badRequest().body(gson.toJson(errorResponse(ERROR_AGENT_CONFIG)));
         }
     }
 
-    @GetMapping({"/agent/metrics/{id}", "/connections/{id}/agent/metrics"})
-    public ResponseEntity<String> getAgentMetrics(@PathVariable String id) {
-        if (!isConnectionId(id) && !PidValidator.isValid(id)) {
-            logger.warn("Invalid PID: {}", id);
-            return validationError(PidValidator.getErrorMessage(id));
-        }
-
+    @PostMapping("/agent/config/{id}")
+    public ResponseEntity<String> updateAgentConfig(@PathVariable String id, @RequestBody Map<String, Object> config) {
         try {
-            JsonObject metrics = analysisService.getAgentMetrics(id);
-            JsonObject result = new JsonObject();
-            result.addProperty("success", true);
-            result.addProperty("timestamp", System.currentTimeMillis());
-            result.add("data", metrics);
-            return ResponseEntity.ok(gson.toJson(result));
+            return ResponseEntity.ok(gson.toJson(agentApiService.updateAgentConfig(id, config)));
+        } catch (Exception e) {
+            logger.error("Error updating agent config for id: {}", id, e);
+            return ResponseEntity.badRequest().body(gson.toJson(errorResponse(ERROR_GENERIC)));
+        }
+    }
+
+    @GetMapping("/agent/metrics/{id}")
+    public ResponseEntity<String> getAgentMetrics(@PathVariable String id) {
+        try {
+            return ResponseEntity.ok(gson.toJson(agentApiService.getAgentMetrics(id)));
         } catch (Exception e) {
             logger.error("Error getting agent metrics for id: {}", id, e);
             return ResponseEntity.badRequest().body(gson.toJson(errorResponse(ERROR_AGENT_METRICS)));
         }
     }
 
-    @PostMapping({"/agent/detach/{id}", "/connections/{id}/agent/detach"})
+    @PostMapping("/agent/detach/{id}")
     public ResponseEntity<String> detachAgent(@PathVariable String id) {
-        if (!isConnectionId(id) && !PidValidator.isValid(id)) {
-            logger.warn("Invalid PID: {}", id);
-            return validationError(PidValidator.getErrorMessage(id));
-        }
-
         try {
-            boolean success = analysisService.detachAgent(id);
+            boolean success = agentApiService.detachAgent(id);
             JsonObject result = new JsonObject();
-            result.addProperty("success", true);
-            result.addProperty("timestamp", System.currentTimeMillis());
-            JsonObject data = new JsonObject();
-            data.addProperty("success", success);
-            data.addProperty("message", success ? "Detach request sent" : "Failed to send detach request");
-            result.add("data", data);
+            result.addProperty("success", success);
             return ResponseEntity.ok(gson.toJson(result));
         } catch (Exception e) {
             logger.error("Error detaching agent for id: {}", id, e);
@@ -375,359 +412,189 @@ public class ApiController {
         }
     }
 
-    // ========== Native Memory API (Agent mode only) ==========
+    // ========== Native Memory API ==========
 
-    @GetMapping({"/native/status/{id}", "/connections/{id}/native/status"})
+    @GetMapping("/native/status/{id}")
     public ResponseEntity<String> getNativeStatus(@PathVariable String id) {
-        if (!isConnectionId(id) && !PidValidator.isValid(id)) {
-            logger.warn("Invalid PID: {}", id);
-            return validationError(PidValidator.getErrorMessage(id));
-        }
-
         try {
-            JsonObject status = analysisService.getNativeStatus(id);
-            JsonObject result = new JsonObject();
-            result.addProperty("success", true);
-            result.addProperty("timestamp", System.currentTimeMillis());
-            result.add("data", status);
-            return ResponseEntity.ok(gson.toJson(result));
+            return ResponseEntity.ok(gson.toJson(agentApiService.getNativeStatus(id)));
         } catch (Exception e) {
             logger.error("Error getting native status for id: {}", id, e);
             return ResponseEntity.badRequest().body(gson.toJson(errorResponse(ERROR_NATIVE_STATUS)));
         }
     }
 
-    @GetMapping({"/native/summary/{id}", "/connections/{id}/native/summary"})
+    @GetMapping("/native/summary/{id}")
     public ResponseEntity<String> getNativeSummary(@PathVariable String id) {
-        if (!isConnectionId(id) && !PidValidator.isValid(id)) {
-            logger.warn("Invalid PID: {}", id);
-            return validationError(PidValidator.getErrorMessage(id));
-        }
-
         try {
-            JsonObject summary = analysisService.getNativeSummary(id);
-            JsonObject result = new JsonObject();
-            result.addProperty("success", true);
-            result.addProperty("timestamp", System.currentTimeMillis());
-            result.add("data", summary);
-            return ResponseEntity.ok(gson.toJson(result));
+            return ResponseEntity.ok(gson.toJson(agentApiService.getNativeSummary(id)));
         } catch (Exception e) {
             logger.error("Error getting native summary for id: {}", id, e);
             return ResponseEntity.badRequest().body(gson.toJson(errorResponse(ERROR_NATIVE_SUMMARY)));
         }
     }
 
-    @GetMapping({"/native/regions/{id}", "/connections/{id}/native/regions"})
+    @GetMapping("/native/regions/{id}")
     public ResponseEntity<String> getNativeRegions(@PathVariable String id) {
-        if (!isConnectionId(id) && !PidValidator.isValid(id)) {
-            logger.warn("Invalid PID: {}", id);
-            return validationError(PidValidator.getErrorMessage(id));
-        }
-
         try {
-            JsonObject regions = analysisService.getNativeRegions(id);
-            JsonObject result = new JsonObject();
-            result.addProperty("success", true);
-            result.addProperty("timestamp", System.currentTimeMillis());
-            result.add("data", regions);
-            return ResponseEntity.ok(gson.toJson(result));
+            return ResponseEntity.ok(gson.toJson(agentApiService.getNativeRegions(id)));
         } catch (Exception e) {
             logger.error("Error getting native regions for id: {}", id, e);
             return ResponseEntity.badRequest().body(gson.toJson(errorResponse(ERROR_NATIVE_REGIONS)));
         }
     }
 
-    @GetMapping({"/native/diagnose/{id}", "/connections/{id}/native/diagnose"})
+    @GetMapping("/native/diagnose/{id}")
     public ResponseEntity<String> getNativeDiagnosis(@PathVariable String id) {
-        if (!isConnectionId(id) && !PidValidator.isValid(id)) {
-            logger.warn("Invalid PID: {}", id);
-            return validationError(PidValidator.getErrorMessage(id));
-        }
-
         try {
-            JsonObject diagnosis = analysisService.getNativeDiagnosis(id);
-            JsonObject result = new JsonObject();
-            result.addProperty("success", true);
-            result.addProperty("timestamp", System.currentTimeMillis());
-            result.add("data", diagnosis);
-            return ResponseEntity.ok(gson.toJson(result));
+            return ResponseEntity.ok(gson.toJson(agentApiService.getNativeDiagnosis(id)));
         } catch (Exception e) {
-            logger.error("Error getting native diagnosis for id: {}", id, e);
+            logger.error("Error performing native diagnosis for id: {}", id, e);
             return ResponseEntity.badRequest().body(gson.toJson(errorResponse(ERROR_NATIVE_DIAGNOSIS)));
         }
     }
 
-    // ========== Allocation Tracking API (Agent mode only) ==========
+    // ========== Allocations API ==========
 
-    @GetMapping({"/allocations/recent/{id}", "/connections/{id}/allocations/recent"})
+    @GetMapping("/allocations/recent/{id}")
     public ResponseEntity<String> getAllocationsRecent(
             @PathVariable String id,
             @RequestParam(defaultValue = "100") int limit) {
-        if (!isConnectionId(id) && !PidValidator.isValid(id)) {
-            logger.warn("Invalid PID: {}", id);
-            return validationError(PidValidator.getErrorMessage(id));
-        }
-
         try {
-            JsonObject allocations = analysisService.getAllocationsRecent(id, limit);
-            JsonObject result = new JsonObject();
-            result.addProperty("success", true);
-            result.addProperty("timestamp", System.currentTimeMillis());
-            result.add("data", allocations);
-            return ResponseEntity.ok(gson.toJson(result));
+            return ResponseEntity.ok(gson.toJson(agentApiService.getAllocationsRecent(id, limit)));
         } catch (Exception e) {
             logger.error("Error getting recent allocations for id: {}", id, e);
             return ResponseEntity.badRequest().body(gson.toJson(errorResponse(ERROR_ALLOCATIONS_RECENT)));
         }
     }
 
-    @GetMapping({"/allocations/stats/{id}", "/connections/{id}/allocations/stats"})
+    @GetMapping("/allocations/stats/{id}")
     public ResponseEntity<String> getAllocationsStats(@PathVariable String id) {
-        if (!isConnectionId(id) && !PidValidator.isValid(id)) {
-            logger.warn("Invalid PID: {}", id);
-            return validationError(PidValidator.getErrorMessage(id));
-        }
-
         try {
-            JsonObject stats = analysisService.getAllocationsStats(id);
-            JsonObject result = new JsonObject();
-            result.addProperty("success", true);
-            result.addProperty("timestamp", System.currentTimeMillis());
-            result.add("data", stats);
-            return ResponseEntity.ok(gson.toJson(result));
+            return ResponseEntity.ok(gson.toJson(agentApiService.getAllocationsStats(id)));
         } catch (Exception e) {
             logger.error("Error getting allocation stats for id: {}", id, e);
             return ResponseEntity.badRequest().body(gson.toJson(errorResponse(ERROR_ALLOCATIONS_STATS)));
         }
     }
 
-    @GetMapping({"/allocations/top/{id}", "/connections/{id}/allocations/top"})
+    @GetMapping("/allocations/top/{id}")
     public ResponseEntity<String> getAllocationsTop(
             @PathVariable String id,
             @RequestParam(defaultValue = "10") int limit) {
-        if (!isConnectionId(id) && !PidValidator.isValid(id)) {
-            logger.warn("Invalid PID: {}", id);
-            return validationError(PidValidator.getErrorMessage(id));
-        }
-
         try {
-            JsonObject top = analysisService.getAllocationsTop(id, limit);
-            JsonObject result = new JsonObject();
-            result.addProperty("success", true);
-            result.addProperty("timestamp", System.currentTimeMillis());
-            result.add("data", top);
-            return ResponseEntity.ok(gson.toJson(result));
+            return ResponseEntity.ok(gson.toJson(agentApiService.getAllocationsTop(id, limit)));
         } catch (Exception e) {
             logger.error("Error getting top allocations for id: {}", id, e);
             return ResponseEntity.badRequest().body(gson.toJson(errorResponse(ERROR_ALLOCATIONS_TOP)));
         }
     }
 
-    @GetMapping({"/allocations/rate/{id}", "/connections/{id}/allocations/rate"})
+    @GetMapping("/allocations/rate/{id}")
     public ResponseEntity<String> getAllocationsRate(@PathVariable String id) {
-        if (!isConnectionId(id) && !PidValidator.isValid(id)) {
-            logger.warn("Invalid PID: {}", id);
-            return validationError(PidValidator.getErrorMessage(id));
-        }
-
         try {
-            JsonObject rate = analysisService.getAllocationsRate(id);
-            JsonObject result = new JsonObject();
-            result.addProperty("success", true);
-            result.addProperty("timestamp", System.currentTimeMillis());
-            result.add("data", rate);
-            return ResponseEntity.ok(gson.toJson(result));
+            return ResponseEntity.ok(gson.toJson(agentApiService.getAllocationsRate(id)));
         } catch (Exception e) {
             logger.error("Error getting allocation rate for id: {}", id, e);
             return ResponseEntity.badRequest().body(gson.toJson(errorResponse(ERROR_ALLOCATIONS_RATE)));
         }
     }
 
-    @GetMapping({"/allocations/summary/{id}", "/connections/{id}/allocations/summary"})
+    @GetMapping("/allocations/summary/{id}")
     public ResponseEntity<String> getAllocationsSummary(@PathVariable String id) {
-        if (!isConnectionId(id) && !PidValidator.isValid(id)) {
-            logger.warn("Invalid PID: {}", id);
-            return validationError(PidValidator.getErrorMessage(id));
-        }
-
         try {
-            JsonObject summary = analysisService.getAllocationsSummary(id);
-            JsonObject result = new JsonObject();
-            result.addProperty("success", true);
-            result.addProperty("timestamp", System.currentTimeMillis());
-            result.add("data", summary);
-            return ResponseEntity.ok(gson.toJson(result));
+            return ResponseEntity.ok(gson.toJson(agentApiService.getAllocationsSummary(id)));
         } catch (Exception e) {
             logger.error("Error getting allocation summary for id: {}", id, e);
             return ResponseEntity.badRequest().body(gson.toJson(errorResponse(ERROR_ALLOCATIONS_SUMMARY)));
         }
     }
 
-    // ========== Method Monitoring API (Agent mode only) ==========
+    // ========== Methods API ==========
 
-    @GetMapping({"/methods/stats/{id}", "/connections/{id}/methods/stats"})
+    @GetMapping("/methods/stats/{id}")
     public ResponseEntity<String> getMethodsStats(
             @PathVariable String id,
             @RequestParam(defaultValue = "20") int limit) {
-        if (!isConnectionId(id) && !PidValidator.isValid(id)) {
-            logger.warn("Invalid PID: {}", id);
-            return validationError(PidValidator.getErrorMessage(id));
-        }
-
         try {
-            JsonObject stats = analysisService.getMethodsStats(id, limit);
-            JsonObject result = new JsonObject();
-            result.addProperty("success", true);
-            result.addProperty("timestamp", System.currentTimeMillis());
-            result.add("data", stats);
-            return ResponseEntity.ok(gson.toJson(result));
+            return ResponseEntity.ok(gson.toJson(agentApiService.getMethodsStats(id, limit)));
         } catch (Exception e) {
             logger.error("Error getting method stats for id: {}", id, e);
             return ResponseEntity.badRequest().body(gson.toJson(errorResponse(ERROR_METHODS_STATS)));
         }
     }
 
-    @GetMapping({"/methods/slow/{id}", "/connections/{id}/methods/slow"})
+    @GetMapping("/methods/slow/{id}")
     public ResponseEntity<String> getMethodsSlow(
             @PathVariable String id,
             @RequestParam(defaultValue = "10") int limit,
-            @RequestParam(defaultValue = "100") int thresholdMs) {
-        if (!isConnectionId(id) && !PidValidator.isValid(id)) {
-            logger.warn("Invalid PID: {}", id);
-            return validationError(PidValidator.getErrorMessage(id));
-        }
-
+            @RequestParam(defaultValue = "100") int threshold) {
         try {
-            JsonObject slow = analysisService.getMethodsSlow(id, limit, thresholdMs);
-            JsonObject result = new JsonObject();
-            result.addProperty("success", true);
-            result.addProperty("timestamp", System.currentTimeMillis());
-            result.add("data", slow);
-            return ResponseEntity.ok(gson.toJson(result));
+            return ResponseEntity.ok(gson.toJson(agentApiService.getMethodsSlow(id, limit, threshold)));
         } catch (Exception e) {
             logger.error("Error getting slow methods for id: {}", id, e);
             return ResponseEntity.badRequest().body(gson.toJson(errorResponse(ERROR_METHODS_SLOW)));
         }
     }
 
-    // ========== Instrumentation Control API (Agent mode only) ==========
+    // ========== Instrumentation API ==========
 
-    @GetMapping({"/instrumentation/status/{id}", "/connections/{id}/instrumentation/status"})
+    @GetMapping("/instrumentation/status/{id}")
     public ResponseEntity<String> getInstrumentationStatus(@PathVariable String id) {
-        if (!isConnectionId(id) && !PidValidator.isValid(id)) {
-            logger.warn("Invalid PID: {}", id);
-            return validationError(PidValidator.getErrorMessage(id));
-        }
-
         try {
-            JsonObject status = analysisService.getInstrumentationStatus(id);
-            JsonObject result = new JsonObject();
-            result.addProperty("success", true);
-            result.addProperty("timestamp", System.currentTimeMillis());
-            result.add("data", status);
-            return ResponseEntity.ok(gson.toJson(result));
+            return ResponseEntity.ok(gson.toJson(agentApiService.getInstrumentationStatus(id)));
         } catch (Exception e) {
             logger.error("Error getting instrumentation status for id: {}", id, e);
             return ResponseEntity.badRequest().body(gson.toJson(errorResponse(ERROR_INSTRUMENTATION_STATUS)));
         }
     }
 
-    @PostMapping({"/instrumentation/allocation/enable/{id}", "/connections/{id}/instrumentation/allocation/enable"})
+    @PostMapping("/instrumentation/allocation/enable/{id}")
     public ResponseEntity<String> enableAllocationTracking(@PathVariable String id) {
-        if (!isConnectionId(id) && !PidValidator.isValid(id)) {
-            logger.warn("Invalid PID: {}", id);
-            return validationError(PidValidator.getErrorMessage(id));
-        }
-
         try {
-            JsonObject resultData = analysisService.enableAllocationTracking(id);
-            JsonObject result = new JsonObject();
-            result.addProperty("success", true);
-            result.addProperty("timestamp", System.currentTimeMillis());
-            result.add("data", resultData);
-            return ResponseEntity.ok(gson.toJson(result));
+            return ResponseEntity.ok(gson.toJson(agentApiService.enableAllocationTracking(id)));
         } catch (Exception e) {
             logger.error("Error enabling allocation tracking for id: {}", id, e);
             return ResponseEntity.badRequest().body(gson.toJson(errorResponse(ERROR_INSTRUMENTATION_ENABLE)));
         }
     }
 
-    @PostMapping({"/instrumentation/allocation/disable/{id}", "/connections/{id}/instrumentation/allocation/disable"})
+    @PostMapping("/instrumentation/allocation/disable/{id}")
     public ResponseEntity<String> disableAllocationTracking(@PathVariable String id) {
-        if (!isConnectionId(id) && !PidValidator.isValid(id)) {
-            logger.warn("Invalid PID: {}", id);
-            return validationError(PidValidator.getErrorMessage(id));
-        }
-
         try {
-            JsonObject resultData = analysisService.disableAllocationTracking(id);
-            JsonObject result = new JsonObject();
-            result.addProperty("success", true);
-            result.addProperty("timestamp", System.currentTimeMillis());
-            result.add("data", resultData);
-            return ResponseEntity.ok(gson.toJson(result));
+            return ResponseEntity.ok(gson.toJson(agentApiService.disableAllocationTracking(id)));
         } catch (Exception e) {
             logger.error("Error disabling allocation tracking for id: {}", id, e);
             return ResponseEntity.badRequest().body(gson.toJson(errorResponse(ERROR_INSTRUMENTATION_DISABLE)));
         }
     }
 
-    @PostMapping({"/instrumentation/methods/enable/{id}", "/connections/{id}/instrumentation/methods/enable"})
+    @PostMapping("/instrumentation/methods/enable/{id}")
     public ResponseEntity<String> enableMethodMonitoring(@PathVariable String id) {
-        if (!isConnectionId(id) && !PidValidator.isValid(id)) {
-            logger.warn("Invalid PID: {}", id);
-            return validationError(PidValidator.getErrorMessage(id));
-        }
-
         try {
-            JsonObject resultData = analysisService.enableMethodMonitoring(id);
-            JsonObject result = new JsonObject();
-            result.addProperty("success", true);
-            result.addProperty("timestamp", System.currentTimeMillis());
-            result.add("data", resultData);
-            return ResponseEntity.ok(gson.toJson(result));
+            return ResponseEntity.ok(gson.toJson(agentApiService.enableMethodMonitoring(id)));
         } catch (Exception e) {
             logger.error("Error enabling method monitoring for id: {}", id, e);
-            return ResponseEntity.badRequest().body(gson.toJson(errorResponse(ERROR_INSTRUMENTATION_ENABLE)));
+            return ResponseEntity.badRequest().body(gson.toJson(errorResponse(ERROR_GENERIC)));
         }
     }
 
-    @PostMapping({"/instrumentation/methods/disable/{id}", "/connections/{id}/instrumentation/methods/disable"})
+    @PostMapping("/instrumentation/methods/disable/{id}")
     public ResponseEntity<String> disableMethodMonitoring(@PathVariable String id) {
-        if (!isConnectionId(id) && !PidValidator.isValid(id)) {
-            logger.warn("Invalid PID: {}", id);
-            return validationError(PidValidator.getErrorMessage(id));
-        }
-
         try {
-            JsonObject resultData = analysisService.disableMethodMonitoring(id);
-            JsonObject result = new JsonObject();
-            result.addProperty("success", true);
-            result.addProperty("timestamp", System.currentTimeMillis());
-            result.add("data", resultData);
-            return ResponseEntity.ok(gson.toJson(result));
+            return ResponseEntity.ok(gson.toJson(agentApiService.disableMethodMonitoring(id)));
         } catch (Exception e) {
             logger.error("Error disabling method monitoring for id: {}", id, e);
-            return ResponseEntity.badRequest().body(gson.toJson(errorResponse(ERROR_INSTRUMENTATION_DISABLE)));
+            return ResponseEntity.badRequest().body(gson.toJson(errorResponse(ERROR_GENERIC)));
         }
     }
 
-    // ========== JVMTI API (Agent mode only) ==========
+    // ========== JVMTI API ==========
 
-    @GetMapping({"/jvmt/status/{id}", "/connections/{id}/jvmt/status"})
+    @GetMapping("/jvmti/status/{id}")
     public ResponseEntity<String> getJvmtiStatus(@PathVariable String id) {
-        if (!isConnectionId(id) && !PidValidator.isValid(id)) {
-            logger.warn("Invalid PID: {}", id);
-            return validationError(PidValidator.getErrorMessage(id));
-        }
-
         try {
-            JsonObject status = analysisService.getJvmtiStatus(id);
-            JsonObject result = new JsonObject();
-            result.addProperty("success", true);
-            result.addProperty("timestamp", System.currentTimeMillis());
-            result.add("data", status);
-            return ResponseEntity.ok(gson.toJson(result));
+            return ResponseEntity.ok(gson.toJson(agentApiService.getJvmtiStatus(id)));
         } catch (Exception e) {
             logger.error("Error getting JVMTI status for id: {}", id, e);
             return ResponseEntity.badRequest().body(gson.toJson(errorResponse(ERROR_JVMTI_STATUS)));
@@ -736,128 +603,138 @@ public class ApiController {
 
     // ========== GC Roots API ==========
 
-    @GetMapping({"/gc-roots/stats/{id}", "/connections/{id}/gc-roots/stats"})
+    @GetMapping("/gc-roots/stats/{id}")
     public ResponseEntity<String> getGcRootStats(@PathVariable String id) {
-        if (!isConnectionId(id) && !PidValidator.isValid(id)) {
-            logger.warn("Invalid PID: {}", id);
+        if (!isConnectionId(id)) {
+            logger.warn("Invalid connection ID or PID: {}", id);
             return validationError(PidValidator.getErrorMessage(id));
         }
 
         try {
-            com.memdiag.core.heap.GcRootStats stats = analysisService.getGcRootStats(id);
+            com.memdiag.core.heap.GcRootStats stats = gcRootsService.getGcRootStats(id);
             JsonObject result = new JsonObject();
             result.addProperty("success", true);
             result.addProperty("timestamp", System.currentTimeMillis());
 
             JsonObject data = new JsonObject();
-            data.addProperty("totalRoots", stats.getTotalRoots());
-
-            JsonObject countsByType = new JsonObject();
-            for (com.memdiag.core.heap.GcRootType type : com.memdiag.core.heap.GcRootType.values()) {
-                countsByType.addProperty(type.name(), stats.getCount(type));
+            JsonObject countsObj = new JsonObject();
+            for (Map.Entry<com.memdiag.core.heap.GcRootType, Long> entry : stats.getCountsByType().entrySet()) {
+                countsObj.addProperty(entry.getKey().name(), entry.getValue());
             }
-            data.add("countsByType", countsByType);
-
+            data.add("countsByType", countsObj);
             result.add("data", data);
+
             return ResponseEntity.ok(gson.toJson(result));
         } catch (Exception e) {
-            logger.error("Error getting GC roots stats for id: {}", id, e);
+            logger.error("Error getting GC roots statistics for id: {}", id, e);
             return ResponseEntity.badRequest().body(gson.toJson(errorResponse(ERROR_GC_ROOTS_STATS)));
         }
     }
 
-    @PostMapping({"/gc-roots/track/start/{id}", "/connections/{id}/gc-roots/track/start"})
+    @PostMapping("/gc-roots/track/start/{id}")
     public ResponseEntity<String> startGcRootTracking(@PathVariable String id) {
-        if (!isConnectionId(id) && !PidValidator.isValid(id)) {
-            logger.warn("Invalid PID: {}", id);
+        if (!isConnectionId(id)) {
+            logger.warn("Invalid connection ID or PID: {}", id);
             return validationError(PidValidator.getErrorMessage(id));
         }
 
         try {
-            boolean success = analysisService.startGcRootTracking(id);
+            boolean success = gcRootsService.startGcRootTracking(id);
             JsonObject result = new JsonObject();
-            result.addProperty("success", true);
+            result.addProperty("success", success);
             result.addProperty("timestamp", System.currentTimeMillis());
-
-            JsonObject data = new JsonObject();
-            data.addProperty("success", success);
-            result.add("data", data);
             return ResponseEntity.ok(gson.toJson(result));
         } catch (Exception e) {
-            logger.error("Error starting GC roots tracking for id: {}", id, e);
+            logger.error("Error starting GC root tracking for id: {}", id, e);
             return ResponseEntity.badRequest().body(gson.toJson(errorResponse(ERROR_GC_ROOTS_TRACK)));
         }
     }
 
-    @PostMapping({"/gc-roots/track/stop/{id}", "/connections/{id}/gc-roots/track/stop"})
+    @PostMapping("/gc-roots/track/stop/{id}")
     public ResponseEntity<String> stopGcRootTracking(@PathVariable String id) {
-        if (!isConnectionId(id) && !PidValidator.isValid(id)) {
-            logger.warn("Invalid PID: {}", id);
+        if (!isConnectionId(id)) {
+            logger.warn("Invalid connection ID or PID: {}", id);
             return validationError(PidValidator.getErrorMessage(id));
         }
 
         try {
-            boolean success = analysisService.stopGcRootTracking(id);
+            boolean success = gcRootsService.stopGcRootTracking(id);
             JsonObject result = new JsonObject();
-            result.addProperty("success", true);
+            result.addProperty("success", success);
             result.addProperty("timestamp", System.currentTimeMillis());
-
-            JsonObject data = new JsonObject();
-            data.addProperty("success", success);
-            result.add("data", data);
             return ResponseEntity.ok(gson.toJson(result));
         } catch (Exception e) {
-            logger.error("Error stopping GC roots tracking for id: {}", id, e);
+            logger.error("Error stopping GC root tracking for id: {}", id, e);
             return ResponseEntity.badRequest().body(gson.toJson(errorResponse(ERROR_GC_ROOTS_TRACK)));
         }
     }
 
     // ========== Snapshot Management ==========
 
-    @PostMapping({"/snapshot/{id}", "/connections/{id}/snapshot"})
+    @PostMapping({"/snapshots/{id}", "/connections/{id}/snapshots"})
     public ResponseEntity<String> createSnapshot(
             @PathVariable String id,
-            @RequestBody(required = false) Map<String, String> body) {
-        if (!isConnectionId(id) && !PidValidator.isValid(id)) {
-            logger.warn("Invalid PID: {}", id);
+            @RequestParam(required = false) String name) {
+        if (!isConnectionId(id)) {
+            logger.warn("Invalid connection ID or PID: {}", id);
             return validationError(PidValidator.getErrorMessage(id));
         }
 
         try {
-            String name = body != null ? body.get("name") : null;
-            com.memdiag.core.diff.Snapshot snapshot = analysisService.createSnapshot(id, name);
+            com.memdiag.core.diff.Snapshot snapshot = snapshotService.createSnapshot(id, name);
             JsonObject result = new JsonObject();
             result.addProperty("success", true);
             result.addProperty("timestamp", System.currentTimeMillis());
 
             JsonObject data = new JsonObject();
             data.addProperty("id", snapshot.getId());
-            data.addProperty("createdAt", snapshot.getTimestamp().toString());
-            data.addProperty("name", snapshot.getId());
-            data.addProperty("size", 0);
+            data.addProperty("timestamp", snapshot.getTimestamp().toString());
             result.add("data", data);
 
             return ResponseEntity.ok(gson.toJson(result));
         } catch (Exception e) {
             logger.error("Error creating snapshot for id: {}", id, e);
-            return ResponseEntity.badRequest().body(gson.toJson(errorResponse(ERROR_SNAPSHOT_CREATE)));
+            return ResponseEntity.badRequest().body(gson.toJson(errorResponse(e.getMessage())));
+        }
+    }
+
+    @GetMapping({"/snapshots/{id}/{snapshotId}", "/connections/{id}/snapshots/{snapshotId}"})
+    public ResponseEntity<String> loadSnapshot(
+            @PathVariable String id,
+            @PathVariable String snapshotId) {
+        if (!isConnectionId(id)) {
+            logger.warn("Invalid connection ID or PID: {}", id);
+            return validationError(PidValidator.getErrorMessage(id));
+        }
+
+        try {
+            com.memdiag.core.diff.Snapshot snapshot = snapshotService.loadSnapshot(id, snapshotId);
+            JsonObject result = new JsonObject();
+            result.addProperty("success", true);
+            result.addProperty("timestamp", System.currentTimeMillis());
+            result.add("data", gson.toJsonTree(snapshot));
+
+            return ResponseEntity.ok(gson.toJson(result));
+        } catch (Exception e) {
+            logger.error("Error loading snapshot {} for id: {}", snapshotId, id, e);
+            return ResponseEntity.badRequest().body(gson.toJson(errorResponse(e.getMessage())));
         }
     }
 
     @GetMapping({"/snapshots/{id}", "/connections/{id}/snapshots"})
     public ResponseEntity<String> listSnapshots(@PathVariable String id) {
-        if (!isConnectionId(id) && !PidValidator.isValid(id)) {
-            logger.warn("Invalid PID: {}", id);
+        if (!isConnectionId(id)) {
+            logger.warn("Invalid connection ID or PID: {}", id);
             return validationError(PidValidator.getErrorMessage(id));
         }
 
         try {
-            java.util.List<com.memdiag.core.diff.SnapshotManager.SnapshotInfo> snapshots = analysisService.listSnapshots(id);
+            java.util.List<com.memdiag.core.diff.SnapshotManager.SnapshotInfo> snapshots = snapshotService.listSnapshots(id);
             JsonObject result = new JsonObject();
             result.addProperty("success", true);
             result.addProperty("timestamp", System.currentTimeMillis());
 
-            com.google.gson.JsonArray dataArray = new com.google.gson.JsonArray();
+            JsonArray dataArray = new JsonArray();
             for (com.memdiag.core.diff.SnapshotManager.SnapshotInfo info : snapshots) {
                 JsonObject item = new JsonObject();
                 item.addProperty("id", info.id != null ? info.id : info.filename);
@@ -879,13 +756,13 @@ public class ApiController {
     public ResponseEntity<String> deleteSnapshot(
             @PathVariable String id,
             @PathVariable String snapshotId) {
-        if (!isConnectionId(id) && !PidValidator.isValid(id)) {
-            logger.warn("Invalid PID: {}", id);
+        if (!isConnectionId(id)) {
+            logger.warn("Invalid connection ID or PID: {}", id);
             return validationError(PidValidator.getErrorMessage(id));
         }
 
         try {
-            boolean deleted = analysisService.deleteSnapshot(id, snapshotId);
+            boolean deleted = snapshotService.deleteSnapshot(id, snapshotId);
             JsonObject result = new JsonObject();
             result.addProperty("success", true);
             result.addProperty("timestamp", System.currentTimeMillis());

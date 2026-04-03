@@ -9,74 +9,69 @@ import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
 /**
- * NMT (Native Memory Tracking) 输出解析器
- * 解析 jcmd <pid> VM.native_memory summary 的输出
+ * NMT (Native Memory Tracking) Output Parser
+ * Enhanced to handle different JVM versions and output styles.
  */
 public class NmtParser {
 
-    // 匹配内存分类行，例如: "Java Heap (reserved=2097152KB, committed=2097152KB)"
+    // Matches lines like: "- Java Heap (reserved=2097152KB, committed=2097152KB)"
     private static final Pattern CATEGORY_PATTERN = Pattern.compile(
-        "^\\s*([^\\(]+)\\s*\\(reserved=(\\d+)KB,\\s*committed=(\\d+)KB\\)");
+        "([\\w\\s]+)\\(reserved=(\\d+)(\\w+),\\s*committed=(\\d+)(\\w+)\\)");
 
-    // 匹配 malloc 信息，例如: "  (malloc=1024KB #100)"
+    // Matches lines like: " (malloc=1024KB #100)"
     private static final Pattern MALLOC_PATTERN = Pattern.compile(
-        "^\\s*\\(malloc=(\\d+)KB\\s*#(\\d+)\\)");
-
-    // 匹配总计行
-    private static final Pattern TOTAL_PATTERN = Pattern.compile(
-        "^\\s*Total:.*reserved=(\\d+)KB,\\s*committed=(\\d+)KB");
+        "malloc=(\\d+)(\\w+)\\s*#(\\d+)");
 
     public NmtSnapshot parse(String nmtOutput) throws IOException {
         NmtSnapshot.Builder builder = NmtSnapshot.builder();
         List<NmtMemoryUsage> usages = new ArrayList<>();
+
+        if (nmtOutput == null || nmtOutput.isEmpty()) {
+            return builder.build();
+        }
 
         BufferedReader reader = new BufferedReader(new StringReader(nmtOutput));
         String line;
         NmtMemoryUsage.Builder currentUsage = null;
 
         while ((line = reader.readLine()) != null) {
-            line = line.trim();
-            if (line.isEmpty()) {
+            String trimmed = line.trim();
+            if (trimmed.isEmpty() || trimmed.startsWith("Native Memory Tracking:") || trimmed.startsWith("Total:")) {
                 continue;
             }
 
-            // 检查是否是分类行
-            Matcher categoryMatcher = CATEGORY_PATTERN.matcher(line);
-            if (categoryMatcher.find()) {
-                // 保存之前的分类
-                if (currentUsage != null) {
-                    usages.add(currentUsage.build());
+            // A category line usually starts with a "-" or is a major heading
+            if (line.contains("(reserved=")) {
+                Matcher categoryMatcher = CATEGORY_PATTERN.matcher(line);
+                if (categoryMatcher.find()) {
+                    // Save previous category before starting a new one
+                    if (currentUsage != null) {
+                        usages.add(currentUsage.build());
+                    }
+
+                    String categoryRaw = categoryMatcher.group(1).replace("-", "").trim();
+                    long reserved = parseValueWithUnit(categoryMatcher.group(2), categoryMatcher.group(3));
+                    long committed = parseValueWithUnit(categoryMatcher.group(4), categoryMatcher.group(5));
+
+                    currentUsage = NmtMemoryUsage.builder()
+                        .category(NmtCategory.fromString(categoryRaw))
+                        .reserved(reserved)
+                        .committed(committed);
                 }
-
-                String categoryName = categoryMatcher.group(1).trim();
-                long reserved = parseKilobytes(categoryMatcher.group(2));
-                long committed = parseKilobytes(categoryMatcher.group(3));
-
-                currentUsage = NmtMemoryUsage.builder()
-                    .category(NmtCategory.fromString(categoryName))
-                    .reserved(reserved)
-                    .committed(committed);
-                continue;
-            }
-
-            // 检查是否是 malloc 行
-            Matcher mallocMatcher = MALLOC_PATTERN.matcher(line);
-            if (mallocMatcher.find() && currentUsage != null) {
-                long malloced = parseKilobytes(mallocMatcher.group(1));
-                long mallocCount = Long.parseLong(mallocMatcher.group(2));
-                currentUsage.malloced(malloced).mallocCount(mallocCount);
-                continue;
-            }
-
-            // 检查是否是总计行
-            Matcher totalMatcher = TOTAL_PATTERN.matcher(line);
-            if (totalMatcher.find()) {
-                // 总计信息已经通过各分类求和获得，这里不单独处理
-                continue;
+            } 
+            // Look for details within the current category
+            else if (currentUsage != null) {
+                Matcher mallocMatcher = MALLOC_PATTERN.matcher(line);
+                if (mallocMatcher.find()) {
+                    long malloced = parseValueWithUnit(mallocMatcher.group(1), mallocMatcher.group(2));
+                    long mallocCount = Long.parseLong(mallocMatcher.group(3));
+                    // We update the current category if details are provided
+                    currentUsage.malloced(malloced).mallocCount(mallocCount);
+                }
             }
         }
 
-        // 保存最后一个分类
+        // Save last category
         if (currentUsage != null) {
             usages.add(currentUsage.build());
         }
@@ -84,23 +79,18 @@ public class NmtParser {
         return builder.usages(usages).build();
     }
 
-    /**
-     * 从虚拟内存详细输出解析
-     * 格式: jcmd <pid> VM.native_memory detail
-     */
     public NmtSnapshot parseDetail(String nmtOutput) throws IOException {
-        // 详细输出解析与 summary 类似，但包含更多细节
-        // 目前使用与 summary 相同的解析逻辑
         return parse(nmtOutput);
     }
 
-    /**
-     * 将 KB 转换为字节
-     */
-    private long parseKilobytes(String kbString) {
+    private long parseValueWithUnit(String value, String unit) {
         try {
-            long kb = Long.parseLong(kbString);
-            return kb * 1024;
+            long val = Long.parseLong(value);
+            String u = unit.toUpperCase();
+            if (u.equals("KB")) return val * 1024;
+            if (u.equals("MB")) return val * 1024 * 1024;
+            if (u.equals("GB")) return val * 1024 * 1024 * 1024;
+            return val; // B
         } catch (NumberFormatException e) {
             return 0;
         }

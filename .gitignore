@@ -1,5 +1,6 @@
 # Maven
 target/
+**/target/
 pom.xml.tag
 pom.xml.releaseBackup
 pom.xml.versionsBackup
@@ -10,16 +11,67 @@ buildNumber.properties
 .mvn/timing.properties
 .mvn/wrapper/maven-wrapper.jar
 
+# Node.js / Frontend
+node_modules/
+**/node_modules/
+memdiag-ui/node_modules/
+dist/
+**/dist/
+.vite/
+.eslintcache
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+.pnpm-debug.log*
+
+# Snapshots & Data
+*.snapshot
+snapshots/
+**/snapshots/
+dump.hprof
+
 # IDE
 .idea/
 *.iml
 .vscode/
 *.swp
 *.swo
+*.sublime-project
+*.sublime-workspace
 
 # OS
 .DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
 Thumbs.db
+
+# Logs
+*.log
+logs/
+**/logs/
+
+# Native Binaries
+*.so
+*.dll
+*.dylib
+*.a
+*.lib
+*.obj
+*.o
+
+# Environment
+.env
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local
+
+# Project Specific
+.planning/phases/**/*.SUMMARY.md
+.planning/phases/**/0*-RESEARCH.md
 
 # Claude Code
 .claude/

@@ -8,10 +8,16 @@ import javax.management.ObjectName;
 import java.io.BufferedReader;
 import java.io.StringReader;
 import java.time.Duration;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 
 public class JmxHeapAnalyzer implements HeapAnalyzer {
     private final JmxClient jmxClient;
     private final ResourceLimiter resourceLimiter;
+
+    // Matches: "  1:          1000         64000  java.lang.String"
+    // Groups: 1=rank, 2=instances, 3=bytes, 4=classname
+    private static final Pattern LINE_PATTERN = Pattern.compile("^\\s*(\\d+):\\s+(\\d+)\\s+(\\d+)\\s+(.+)$");
 
     public JmxHeapAnalyzer(JmxClient jmxClient) {
         this(jmxClient, createDefaultResourceLimiter());
@@ -76,43 +82,17 @@ public class JmxHeapAnalyzer implements HeapAnalyzer {
 
         try (BufferedReader reader = new BufferedReader(new StringReader(output))) {
             String line;
-            boolean inDataSection = false;
-
             while ((line = reader.readLine()) != null) {
-                line = line.trim();
-
-                // 跳过表头和分隔线
-                if (line.startsWith("num")) {
-                    inDataSection = true;
-                    continue;
-                }
-                if (line.startsWith("-") || line.startsWith("Total")) {
-                    continue;
-                }
-                if (!inDataSection) {
-                    continue;
-                }
-                if (line.isEmpty()) {
-                    continue;
-                }
-
-                // 解析行格式: "  1:          1000         64000  java.lang.String"
-                String[] parts = line.split("\\s+");
-                if (parts.length >= 4) {
+                Matcher matcher = LINE_PATTERN.matcher(line);
+                if (matcher.find()) {
                     try {
-                        int idx = Integer.parseInt(parts[0].replace(":", ""));
-                        long count = Long.parseLong(parts[1]);
-                        long bytes = Long.parseLong(parts[2]);
+                        long count = Long.parseLong(matcher.group(2));
+                        long bytes = Long.parseLong(matcher.group(3));
+                        String className = matcher.group(4).trim();
 
-                        // 类名可能包含空格（内部类等），从第3个索引开始拼接
-                        StringBuilder className = new StringBuilder(parts[3]);
-                        for (int i = 4; i < parts.length; i++) {
-                            className.append(" ").append(parts[i]);
-                        }
-
-                        histogram.add(new ClassStats(className.toString(), count, bytes));
+                        histogram.add(new ClassStats(className, count, bytes));
                     } catch (NumberFormatException ignored) {
-                        // 跳过无法解析的行
+                        // Skip invalid numeric values
                     }
                 }
             }
@@ -122,5 +102,4 @@ public class JmxHeapAnalyzer implements HeapAnalyzer {
 
         return histogram;
     }
-
 }

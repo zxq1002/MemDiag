@@ -6,103 +6,72 @@ wave: 3
 depends_on: ["phase-4-02"]
 files_modified:
   - memdiag-ui/src/components/histogram/HistogramTable.vue
-  - memdiag-ui/src/components/histogram/__tests__/HistogramTable.test.js
 autonomous: true
 requirements: [R-UI-002]
 must_haves:
   truths:
-    - "Users can filter classes by numeric count and size thresholds"
-    - "Histogram data can be exported as CSV or JSON files"
-    - "Table provides immediate visual feedback on relative object sizes using bars"
+    - "Users can filter classes by numeric thresholds (count/size)"
+    - "Data can be exported to CSV and JSON formats"
+    - "Relative size bars provide visual weight to large classes"
   artifacts:
     - path: "memdiag-ui/src/components/histogram/HistogramTable.vue"
-      provides: "Enhanced interactive table with filters, export, and visual cues"
-    - path: "memdiag-ui/src/components/histogram/__tests__/HistogramTable.test.js"
-      provides: "Verification of table features"
-  key_links:
-    - from: "memdiag-ui/src/components/histogram/HistogramTable.vue"
-      to: "PrimeVue DataTable"
-      via: "filterDisplay='menu' and exportCSV()"
+      provides: "Enhanced analysis features"
 ---
 
 <objective>
-Enhance the Histogram Table with advanced analysis tools including numeric filtering, multi-format data export, and relative size visual indicators. This transforms a static table into a powerful diagnostic tool for identifying memory leaks and hotspots.
+Implement advanced analysis features in the Histogram table, including complex filtering, data export, and visual data bars.
+Purpose: Provide users with powerful tools to drill down into heap usage.
+Output: An advanced, feature-rich Histogram analysis table.
 </objective>
-
-<execution_context>
-@$HOME/.gemini/get-shit-done/workflows/execute-plan.md
-</execution_context>
-
-<context>
-@.planning/PROJECT.md
-@.planning/ROADMAP.md
-@.planning/phases/phase-4-histogram-enhancement/04-RESEARCH.md
-@memdiag-ui/src/components/histogram/HistogramTable.vue
-</context>
 
 <tasks>
 
 <task type="auto">
-  <name>Task 1: Implement Advanced Filtering & Data Export</name>
+  <name>Task 1: Add Advanced Filtering</name>
   <files>memdiag-ui/src/components/histogram/HistogramTable.vue</files>
   <action>
-    - Configure PrimeVue DataTable with `filterDisplay="menu"`.
-    - Add numeric filters for `objectCount` and `shallowBytes` using PrimeVue's `FilterMatchMode.GREATER_THAN_OR_EQUAL_TO` and `InputNumber` components in the filter template.
-    - Implement `exportCSV` using PrimeVue's built-in `dt.value.exportCSV()`.
-    - Implement `exportJSON` using a custom Blob-based download utility as described in RESEARCH.md.
-    - Update the UI to include buttons for these actions.
+    Configure PrimeVue DataTable to use `filterDisplay="menu"`.
+    Add numeric filter constraints for "Objects" and "Shallow Size" columns (e.g., greater than, less than).
   </action>
   <verify>
-    <automated>grep "exportCSV" memdiag-ui/src/components/histogram/HistogramTable.vue && grep "InputNumber" memdiag-ui/src/components/histogram/HistogramTable.vue</automated>
+    <automated>Check for filterDisplay and filter constraints in code.</automated>
   </verify>
-  <done>Table supports numeric filtering and multi-format export.</done>
+  <done>Advanced filtering is implemented.</done>
 </task>
 
 <task type="auto">
-  <name>Task 2: Implement Relative Size Data Bars</name>
+  <name>Task 2: Implement Data Export</name>
   <files>memdiag-ui/src/components/histogram/HistogramTable.vue</files>
   <action>
-    - Add a computed property to find the maximum `shallowBytes` in the current dataset.
-    - Update the `shallowBytes` Column template to include a horizontal "data bar" that represents the value relative to the maximum.
-    - Use Tailwind classes for styling: `bg-indigo-500` for the bar, `h-1.5` for height, and `rounded-full` for shape.
+    - Integrate `DataTable.exportCSV()` for CSV export.
+    - Implement a custom JSON export function using `Blob` and `a.download` pattern.
+    - Add UI buttons to trigger these exports.
   </action>
   <verify>
-    <automated>grep "style" memdiag-ui/src/components/histogram/HistogramTable.vue | grep "width"</automated>
+    <automated>Check for export methods and trigger buttons.</automated>
   </verify>
-  <done>Shallow Size column includes visual relative bars.</done>
+  <done>CSV and JSON export functionality is implemented.</done>
 </task>
 
-<task type="auto" tdd="true">
-  <name>Task 3: Create Unit Tests for HistogramTable</name>
-  <files>memdiag-ui/src/components/histogram/__tests__/HistogramTable.test.js</files>
-  <behavior>
-    - Should render data bars with correct widths based on values
-    - Should trigger CSV export when button is clicked
-    - Should correctly format JSON for export
-    - Should filter rows based on numeric input
-  </behavior>
+<task type="auto">
+  <name>Task 3: Implement Visual Data Bars</name>
+  <files>memdiag-ui/src/components/histogram/HistogramTable.vue</files>
   <action>
-    Write component tests using Vitest and @vue/test-utils. Mock PrimeVue's DataTable export methods if necessary, or verify that the correct internal methods are called.
+    Add a template to the "Shallow Size" column that renders a background bar representing the class's size relative to the largest class in the current view.
+    Use Tailwind classes for styling the bar (e.g., `bg-indigo-100`).
   </action>
   <verify>
-    <automated>cd memdiag-ui && npm run test -- HistogramTable</automated>
+    <automated>Check for template implementation in Shallow Size column.</automated>
   </verify>
-  <done>Enhanced table features are verified by automated tests.</done>
+  <done>Visual data bars are implemented.</done>
 </task>
 
 </tasks>
 
 <verification>
-Run all UI tests: `cd memdiag-ui && npm run test`.
-Manual verification of export functionality in the browser.
+Ensure all new features are integrated and do not introduce UI glitches or performance regressions.
 </verification>
 
 <success_criteria>
-- Advanced filtering works for class name (contains) and numeric values (>=).
-- Export buttons produce valid .csv and .json files.
-- Data bars accurately reflect the magnitude of shallow size.
+Histogram view provides advanced filtering, data bars, and export capabilities.
 </success_criteria>
-
-<output>
-After completion, create `.planning/phases/phase-4-histogram-enhancement/phase-4-03-SUMMARY.md`
-</output>

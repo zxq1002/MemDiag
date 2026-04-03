@@ -1,224 +1,126 @@
-<template>
-  <div class="diagnosis">
-    <h2>Diagnosis</h2>
+<script setup>
+import { ref, computed, onMounted, watch } from 'vue'
+import { useConnectionStore } from '../stores/connectionStore'
+import { useDiagnosis } from '../composables/useDiagnosis'
+import { Stethoscope, RefreshCw } from 'lucide-vue-next'
+import Button from 'primevue/button'
+import Select from 'primevue/select'
+import ProgressBar from 'primevue/progressbar'
 
-    <div class="controls">
-      <select v-model="selectedConn">
-        <option value="">Select connection</option>
-        <option v-for="conn in connections" :key="conn.id" :value="conn.id">{{ conn.id }}</option>
-      </select>
-      <button @click="loadDiagnosis">Diagnose</button>
+// Child components
+import DiagnosisSummary from '../components/diagnosis/DiagnosisSummary.vue'
+import DiagnosisIssues from '../components/diagnosis/DiagnosisIssues.vue'
+
+const connectionStore = useConnectionStore()
+const { 
+  diagnosisData, 
+  filteredIssues, 
+  severityFilter,
+  isLoading, 
+  loadDiagnosis 
+} = useDiagnosis()
+
+// Global Sync
+const selectedConn = computed({
+  get: () => connectionStore.currentConnectionId,
+  set: (val) => connectionStore.setCurrentConnection(val)
+})
+
+const connections = computed(() => {
+  return Object.entries(connectionStore.connections).map(([id, status]) => ({ id, label: id }))
+})
+
+const refresh = () => {
+  if (selectedConn.value) {
+    loadDiagnosis(selectedConn.value)
+  }
+}
+
+onMounted(() => {
+  if (selectedConn.value) refresh()
+})
+
+watch(selectedConn, (newVal) => {
+  if (newVal) {
+    refresh()
+  } else {
+    diagnosisData.value = null
+  }
+})
+</script>
+
+<template>
+  <div class="space-y-6">
+    <!-- Header -->
+    <div class="flex flex-col md:flex-row md:items-center justify-between gap-4">
+      <div>
+        <h1 class="text-3xl font-bold text-slate-900 tracking-tight">System Diagnosis</h1>
+        <p class="text-slate-500 mt-1 text-sm">Automated analysis of memory and thread health.</p>
+      </div>
     </div>
 
-    <div v-if="result" class="results">
-      <div v-if="result.issues && result.issues.length > 0" class="issues">
-        <h3>Issues Found</h3>
-        <div v-for="(issue, idx) in result.issues" :key="idx" class="issue-card" :class="issue.severity?.toLowerCase()">
-          <div class="issue-header">
-            <span class="severity-badge" :class="issue.severity?.toLowerCase()">{{ issue.severity || 'INFO' }}</span>
-            <span class="issue-title">{{ issue.title }}</span>
-          </div>
-          <p class="issue-desc">{{ issue.description }}</p>
-          <div v-if="issue.recommendations && issue.recommendations.length > 0" class="recommendations">
-            <strong>Recommendations:</strong>
-            <ul>
-              <li v-for="(rec, ridx) in issue.recommendations" :key="ridx">{{ rec.description }}</li>
-            </ul>
-          </div>
+    <!-- Controls Bar -->
+    <div class="bg-white p-3 rounded-2xl shadow-sm border border-slate-100 flex flex-col lg:flex-row gap-4 items-stretch lg:items-center">
+      <!-- Target Selection -->
+      <div class="flex items-center gap-3 lg:border-r lg:border-slate-100 lg:pr-6">
+        <div class="p-2 bg-indigo-50 rounded-lg text-indigo-600">
+          <Stethoscope class="w-4 h-4" />
         </div>
+        <Select 
+          v-model="selectedConn" 
+          :options="connections" 
+          optionLabel="label" 
+          optionValue="id" 
+          placeholder="Select Connection" 
+          class="flex-1 lg:w-48 border-0 shadow-none bg-slate-50 rounded-xl"
+        />
       </div>
 
-      <div v-else class="no-issues">
-        <div class="success-icon">✓</div>
-        <p>No issues found!</p>
+      <div class="flex-1"></div>
+
+      <!-- Action Button -->
+      <Button 
+        size="small" 
+        @click="refresh" 
+        :loading="isLoading" 
+        class="rounded-xl font-bold px-6 min-w-[160px] flex-shrink-0"
+      >
+        <template #icon><RefreshCw :class="['w-4 h-4 mr-2', isLoading ? 'animate-spin' : '']" /></template>
+        Run Diagnosis
+      </Button>
+    </div>
+
+    <!-- Loading State -->
+    <ProgressBar v-if="isLoading" mode="indeterminate" style="height: 4px" class="rounded-full overflow-hidden" />
+
+    <!-- Content -->
+    <div v-if="diagnosisData" class="space-y-8">
+      <DiagnosisSummary 
+        :totalHeapUsed="diagnosisData.totalHeapUsed"
+        :totalHeapCommitted="diagnosisData.totalHeapCommitted"
+        :threadCount="diagnosisData.threadCount"
+        :issueCount="diagnosisData.issues?.length || 0"
+      />
+
+      <DiagnosisIssues 
+        :issues="filteredIssues"
+        v-model:severityFilter="severityFilter"
+      />
+    </div>
+
+    <!-- Empty State -->
+    <div v-else-if="!isLoading && !selectedConn" class="flex flex-col items-center justify-center py-20 bg-white rounded-3xl border border-dashed border-slate-200">
+      <div class="p-4 bg-slate-50 rounded-full mb-4">
+        <Stethoscope class="w-12 h-12 text-slate-300" />
       </div>
+      <h3 class="text-xl font-bold text-slate-900">Ready to Diagnose</h3>
+      <p class="text-slate-500 mt-1 max-w-sm text-center">Please select a JVM connection from the Dashboard or the dropdown above.</p>
     </div>
   </div>
 </template>
 
-<script>
-import axios from 'axios'
-
-export default {
-  name: 'Diagnosis',
-  data() {
-    return {
-      connections: [],
-      selectedConn: '',
-      result: null
-    }
-  },
-  mounted() {
-    this.loadConnections()
-  },
-  methods: {
-    async loadConnections() {
-      try {
-        const response = await axios.get('/api/v1/connections')
-        this.connections = Object.entries(response.data).map(([id, status]) => ({ id, status }))
-      } catch (e) {
-        console.error('Failed to load connections:', e)
-      }
-    },
-    async loadDiagnosis() {
-      if (!this.selectedConn) return
-      try {
-        const response = await axios.get(`/api/v1/diagnose/${this.selectedConn}`)
-        this.result = response.data
-      } catch (e) {
-        console.error('Failed to load diagnosis:', e)
-      }
-    }
-  }
-}
-</script>
-
 <style scoped>
-.diagnosis {
-  max-width: 1000px;
-}
-
-h2 {
-  margin-bottom: 2rem;
-  color: #667eea;
-}
-
-.controls {
-  display: flex;
-  gap: 1rem;
-  margin-bottom: 2rem;
-  background: white;
-  padding: 1rem;
-  border-radius: 8px;
-  box-shadow: 0 2px 8px rgba(0,0,0,0.1);
-}
-
-.controls select {
-  padding: 0.5rem;
-  border: 1px solid #ddd;
-  border-radius: 4px;
-}
-
-.controls button {
-  padding: 0.5rem 1.5rem;
-  background: #667eea;
-  color: white;
-  border: none;
-  border-radius: 4px;
-  cursor: pointer;
-}
-
-.controls button:hover {
-  background: #5a67d8;
-}
-
-.results {
-  background: white;
-  padding: 1.5rem;
-  border-radius: 8px;
-  box-shadow: 0 2px 8px rgba(0,0,0,0.1);
-}
-
-.issues {
-  display: flex;
-  flex-direction: column;
-  gap: 1.5rem;
-}
-
-h3 {
-  color: #555;
-  margin-bottom: 1rem;
-}
-
-.issue-card {
-  padding: 1.5rem;
-  border-radius: 8px;
-  border-left: 4px solid #ccc;
-  background: #f8f9fa;
-}
-
-.issue-card.critical {
-  border-left-color: #e53e3e;
-  background: #fff5f5;
-}
-
-.issue-card.warning {
-  border-left-color: #ed8936;
-  background: #fffaf0;
-}
-
-.issue-card.info {
-  border-left-color: #4299e1;
-  background: #ebf8ff;
-}
-
-.issue-header {
-  display: flex;
-  align-items: center;
-  gap: 1rem;
+:deep(.p-accordion-tab) {
   margin-bottom: 0.75rem;
-}
-
-.severity-badge {
-  padding: 0.25rem 0.75rem;
-  border-radius: 4px;
-  font-size: 0.75rem;
-  font-weight: 600;
-  text-transform: uppercase;
-  background: #ccc;
-  color: white;
-}
-
-.severity-badge.critical {
-  background: #e53e3e;
-}
-
-.severity-badge.warning {
-  background: #ed8936;
-}
-
-.severity-badge.info {
-  background: #4299e1;
-}
-
-.issue-title {
-  font-weight: 600;
-  font-size: 1.1rem;
-}
-
-.issue-desc {
-  color: #666;
-  line-height: 1.6;
-}
-
-.recommendations {
-  margin-top: 1rem;
-  padding-top: 1rem;
-  border-top: 1px solid #ddd;
-}
-
-.recommendations ul {
-  margin-top: 0.5rem;
-  padding-left: 1.5rem;
-}
-
-.recommendations li {
-  margin: 0.25rem 0;
-}
-
-.no-issues {
-  text-align: center;
-  padding: 3rem;
-}
-
-.success-icon {
-  font-size: 4rem;
-  color: #48bb78;
-  margin-bottom: 1rem;
-}
-
-.no-issues p {
-  color: #666;
-  font-size: 1.2rem;
 }
 </style>
