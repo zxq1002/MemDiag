@@ -1,7 +1,7 @@
 # MemDiag Roadmap
 
-**Date:** 2026-04-02
-**Version:** 1.0
+**Date:** 2026-04-03
+**Version:** 1.1
 **Focus:** Bug Fixes + Web UI Enhancement
 
 ---
@@ -30,9 +30,9 @@ This roadmap defines the phase structure for addressing known issues and enhanci
 - Error messages sanitized
 
 **Acceptance Criteria:**
-- [ ] CORS no longer allows all origins
-- [ ] Invalid inputs return 400 with clear messages
-- [ ] No exception details exposed to clients
+- [x] CORS no longer allows all origins
+- [x] Invalid inputs return 400 with clear messages
+- [x] No exception details exposed to clients
 
 ---
 
@@ -43,20 +43,22 @@ This roadmap defines the phase structure for addressing known issues and enhanci
 **Duration:** 1 phase
 **Priority:** Medium
 
-**Tasks:**
-1. Refactor field injection to constructor injection
-2. Split AnalysisService into focused services
-3. Externalize hardcoded configuration values
+**Plans:** 3 plans
+- [ ] phase-2-01-PLAN.md — Test Suite & Properties initialization
+- [ ] phase-2-02-PLAN.md — Core Refactoring (Connection/JMX)
+- [ ] phase-2-03-PLAN.md — Specialized Services & API Cleanup
 
 **Deliverables:**
 - Constructor injection used everywhere
 - Single-responsibility services
 - Configuration externalized
+- 80%+ coverage on web layer
 
 **Acceptance Criteria:**
 - [ ] No @Autowired on fields
 - [ ] Each service < 200 lines
 - [ ] No hardcoded ports/timeouts
+- [ ] ApiController contract verified with MockMvc
 
 ---
 
@@ -156,28 +158,25 @@ This roadmap defines the phase structure for addressing known issues and enhanci
 
 ---
 
-## Phase 7: Testing & Validation
+## Phase 7: Testing & Validation (Refined)
 
-**Goal:** Add web layer tests and validate all changes
+**Goal:** Validate all changes and finalize test suite
 
 **Duration:** 1 phase
 **Priority:** High
 
 **Tasks:**
-1. Unit tests for controllers
-2. Unit tests for services
-3. API contract/integration tests
-4. Full end-to-end validation
+1. End-to-end integration tests
+2. Performance validation
+3. Final documentation update
 
 **Deliverables:**
-- Web layer test suite
-- API contract tests
-- Validation report
+- Full validation report
+- Completed documentation
 
 **Acceptance Criteria:**
-- [ ] 80%+ coverage on web layer
-- [ ] All API endpoints have tests
-- [ ] All phases work together correctly
+- [ ] All features work together correctly
+- [ ] Performance meets NFRs
 
 ---
 
@@ -199,4 +198,4 @@ Upon completion of all phases:
 
 ---
 
-*Roadmap created: 2026-04-02*
+*Roadmap updated: 2026-04-03*
