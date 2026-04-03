@@ -43,10 +43,15 @@ This roadmap defines the phase structure for addressing known issues and enhanci
 **Duration:** 1 phase
 **Priority:** Medium
 
-**Plans:** 3 plans
+**Plans:** 8 plans
 - [ ] phase-2-01-PLAN.md — Test Suite & Properties initialization
-- [ ] phase-2-02-PLAN.md — Core Refactoring (Connection/JMX)
-- [ ] phase-2-03-PLAN.md — Specialized Services & API Cleanup
+- [ ] phase-2-02-PLAN.md — ConnectionManager Extraction & Test
+- [ ] phase-2-03-PLAN.md — JmxAnalysisService Extraction & Test
+- [ ] phase-2-04-PLAN.md — AgentApiService Extraction & Test
+- [ ] phase-2-05-PLAN.md — SnapshotService Extraction & Test
+- [ ] phase-2-06-PLAN.md — GcRootsService Extraction & Test
+- [ ] phase-2-07-PLAN.md — ApiController Refactor & Integration Tests
+- [ ] phase-2-08-PLAN.md — Final Cleanup & AnalysisService Deprecation
 
 **Deliverables:**
 - Constructor injection used everywhere
@@ -93,20 +98,21 @@ This roadmap defines the phase structure for addressing known issues and enhanci
 **Duration:** 1 phase
 **Priority:** Medium
 
-**Tasks:**
-1. Add sortable columns
-2. Add search/filter by class name
-3. Add CSV/JSON export
+**Plans:** 3 plans
+- [ ] phase-4-01-PLAN.md — Test Infrastructure & Composable Extraction
+- [ ] phase-4-02-PLAN.md — Componentization of Histogram View
+- [ ] phase-4-03-PLAN.md — Advanced Table Features (Filtering, Export, Visuals)
 
 **Deliverables:**
-- Interactive histogram table
-- Search/filter capabilities
-- Data export functionality
+- Interactive histogram table with modular components
+- Advanced numeric filters and CSV/JSON export
+- Relative size visual bars
 
 **Acceptance Criteria:**
-- [ ] Columns sortable by click
+- [ ] Table columns are sortable and filtered via numeric menu
 - [ ] Search filters results in real-time
 - [ ] Export produces valid CSV/JSON
+- [ ] Visual data bars show relative sizes correctly
 
 ---
 
