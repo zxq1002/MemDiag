@@ -1,5 +1,6 @@
 <script setup>
 import { ref } from 'vue'
+import { useI18n } from 'vue-i18n'
 import DataTable from 'primevue/datatable'
 import Column from 'primevue/column'
 import Card from 'primevue/card'
@@ -8,6 +9,7 @@ import InputText from 'primevue/inputtext'
 import { ListTree, Search, X } from 'lucide-vue-next'
 import StackTraceViewer from './StackTraceViewer.vue'
 
+const { t } = useI18n()
 const props = defineProps({
   threads: Array,
   stateFilter: String,
@@ -30,12 +32,12 @@ const getStateSeverity = (state) => {
 </script>
 
 <template>
-  <Card class="border-0 shadow-sm overflow-hidden">
+  <Card class="border-0 shadow-sm overflow-hidden rounded-3xl">
     <template #title>
       <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
         <div class="flex items-center gap-2 text-lg">
           <ListTree class="w-5 h-5 text-indigo-600" />
-          <span>Active Threads</span>
+          <span>{{ t('threads.activeThreads') }}</span>
           <Tag v-if="stateFilter" :value="stateFilter" :severity="getStateSeverity(stateFilter)" closable @close="emit('clearFilter')" />
         </div>
         <div class="flex items-center gap-3">
@@ -44,8 +46,8 @@ const getStateSeverity = (state) => {
             <InputText 
               :modelValue="searchQuery" 
               @update:modelValue="val => emit('update:searchQuery', val)"
-              placeholder="Search threads..." 
-              class="p-inputtext-sm pl-10 w-48 sm:w-64 bg-slate-50 border-slate-100" 
+              :placeholder="t('threads.searchPlaceholder')" 
+              class="p-inputtext-sm pl-10 w-48 sm:w-64 bg-slate-50 border-slate-100 rounded-xl" 
             />
           </div>
         </div>
@@ -62,22 +64,22 @@ const getStateSeverity = (state) => {
         removableSort
       >
         <Column expander style="width: 3rem" />
-        <Column field="threadId" header="ID" sortable>
+        <Column field="threadId" :header="t('common.id')" sortable>
           <template #body="slotProps">
             <code class="text-xs font-bold text-slate-400">#{{ slotProps.data.threadId }}</code>
           </template>
         </Column>
-        <Column field="threadName" header="Thread Name" sortable>
+        <Column field="threadName" :header="t('common.name')" sortable>
           <template #body="slotProps">
             <span class="font-bold text-slate-700 text-sm">{{ slotProps.data.threadName }}</span>
           </template>
         </Column>
-        <Column field="state" header="State" sortable>
+        <Column field="state" :header="t('common.status')" sortable>
           <template #body="slotProps">
             <Tag :value="slotProps.data.state" :severity="getStateSeverity(slotProps.data.state)" />
           </template>
         </Column>
-        <Column field="blockedCount" header="Blocked" sortable class="text-right">
+        <Column field="blockedCount" :header="t('threads.blocked')" sortable class="text-right">
           <template #body="slotProps">
             <span class="text-xs font-mono" :class="slotProps.data.blockedCount > 0 ? 'text-red-500 font-bold' : 'text-slate-400'">
               {{ slotProps.data.blockedCount }}

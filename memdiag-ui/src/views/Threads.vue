@@ -1,5 +1,6 @@
 <script setup>
 import { ref, computed, onMounted, watch } from 'vue'
+import { useI18n } from 'vue-i18n'
 import { useConnectionStore } from '../stores/connectionStore'
 import { useThreads } from '../composables/useThreads'
 import { ListTree, RefreshCw, Activity } from 'lucide-vue-next'
@@ -11,6 +12,7 @@ import ProgressBar from 'primevue/progressbar'
 import ThreadSummary from '../components/threads/ThreadSummary.vue'
 import ThreadTable from '../components/threads/ThreadTable.vue'
 
+const { t } = useI18n()
 const connectionStore = useConnectionStore()
 const { 
   threads,
@@ -54,8 +56,8 @@ watch(selectedConn, (newVal) => {
     <!-- Header -->
     <div class="flex flex-col md:flex-row md:items-center justify-between gap-4">
       <div>
-        <h1 class="text-3xl font-bold text-slate-900 tracking-tight">Thread Analysis</h1>
-        <p class="text-slate-500 mt-1 text-sm">Monitor JVM threads and investigate stack traces.</p>
+        <h1 class="text-3xl font-bold text-slate-900 tracking-tight">{{ t('threads.title') }}</h1>
+        <p class="text-slate-500 mt-1 text-sm">{{ t('threads.subtitle') }}</p>
       </div>
     </div>
 
@@ -71,7 +73,7 @@ watch(selectedConn, (newVal) => {
           :options="connections" 
           optionLabel="label" 
           optionValue="id" 
-          placeholder="Select Connection" 
+          :placeholder="t('common.selectConnection')" 
           class="flex-1 lg:w-48 border-0 shadow-none bg-slate-50 rounded-xl"
         />
       </div>
@@ -83,10 +85,10 @@ watch(selectedConn, (newVal) => {
         size="small" 
         @click="refresh" 
         :loading="isLoading" 
-        class="rounded-xl font-bold px-6 min-w-[120px] flex-shrink-0"
+        class="rounded-xl font-bold px-6 min-w-[120px]"
       >
         <template #icon><RefreshCw :class="['w-4 h-4 mr-2', isLoading ? 'animate-spin' : '']" /></template>
-        Refresh
+        {{ t('common.refresh') }}
       </Button>
     </div>
 
@@ -114,8 +116,11 @@ watch(selectedConn, (newVal) => {
       <div class="p-4 bg-slate-50 rounded-full mb-4">
         <Activity class="w-12 h-12 text-slate-300" />
       </div>
-      <h3 class="text-xl font-bold text-slate-900">Thread Analysis</h3>
-      <p class="text-slate-500 mt-1 max-w-sm text-center">Please select a JVM connection from the Dashboard or the dropdown above.</p>
+      <h3 class="text-xl font-bold text-slate-900">{{ t('threads.activeThreads') }}</h3>
+      <p class="text-slate-500 mt-1 max-w-sm text-center">{{ t('diff.selectTwoDesc') }}</p>
     </div>
   </div>
 </template>
+
+<style scoped>
+</style>

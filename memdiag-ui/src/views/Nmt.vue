@@ -1,5 +1,6 @@
 <script setup>
 import { ref, computed, onMounted, onBeforeUnmount, watch, nextTick } from 'vue'
+import { useI18n } from 'vue-i18n'
 import * as echarts from 'echarts'
 import axios from 'axios'
 import { useConnectionStore } from '../stores/connectionStore'
@@ -24,6 +25,7 @@ import ProgressBar from 'primevue/progressbar'
 import Message from 'primevue/message'
 import Tag from 'primevue/tag'
 
+const { t } = useI18n()
 const connectionStore = useConnectionStore()
 
 // Global Sync
@@ -78,7 +80,7 @@ const loadNmt = async () => {
   isLoading.value = true
   error.value = null
   try {
-    const response = await axios.get(`nmt/${selectedConn.value}`, { 
+    const response = await axios.get(`/api/v1/nmt/${selectedConn.value}`, { 
       params: { detail: detailMode.value } 
     })
     snapshot.value = response.data
@@ -86,7 +88,7 @@ const loadNmt = async () => {
     renderChart()
   } catch (e) {
     console.error('Failed to load NMT:', e)
-    error.value = 'Failed to load NMT data. Ensure Native Memory Tracking is enabled.'
+    error.value = t('nmt.error')
   } finally {
     isLoading.value = false
   }
@@ -180,8 +182,8 @@ watch(selectedConn, (newVal) => {
     <!-- Header -->
     <div class="flex flex-col md:flex-row md:items-center justify-between gap-4">
       <div>
-        <h1 class="text-3xl font-bold text-slate-900 tracking-tight">Native Memory</h1>
-        <p class="text-slate-500 mt-1 text-sm">Track off-heap memory usage and analyze deltas.</p>
+        <h1 class="text-3xl font-bold text-slate-900 tracking-tight">{{ t('nmt.title') }}</h1>
+        <p class="text-slate-500 mt-1 text-sm">{{ t('nmt.subtitle') }}</p>
       </div>
       
       <div class="flex items-center gap-3 bg-white p-2 rounded-2xl shadow-sm border border-slate-100">
@@ -190,7 +192,7 @@ watch(selectedConn, (newVal) => {
           :options="connections" 
           optionLabel="label" 
           optionValue="id" 
-          placeholder="Select Connection" 
+          :placeholder="t('common.selectConnection')" 
           class="w-48 border-0 shadow-none bg-slate-50 rounded-xl font-medium"
         />
         <Button 
@@ -200,50 +202,50 @@ watch(selectedConn, (newVal) => {
           class="rounded-xl font-bold px-6 min-w-[120px]"
         >
           <template #icon><RefreshCw :class="['w-4 h-4 mr-2', isLoading ? 'animate-spin' : '']" /></template>
-          Refresh
+          {{ t('common.refresh') }}
         </Button>
       </div>
     </div>
 
-    <!-- Toolbar - Simplified & Stabilized -->
+    <!-- Toolbar -->
     <div class="flex flex-wrap items-center gap-4 bg-slate-100/50 p-2 rounded-2xl border border-slate-200/50 min-h-[64px]">
-      <!-- Setting Group -->
-      <div class="flex items-center gap-3 bg-white px-4 py-2 rounded-xl border border-slate-200 shadow-sm self-center">
+      <div class="flex items-center gap-3 bg-white px-4 h-12 rounded-xl border border-slate-200 shadow-sm">
         <ListFilter class="w-4 h-4 text-slate-400" />
-        <span class="text-[10px] font-black text-slate-500 uppercase tracking-widest">Detail Mode</span>
+        <span class="text-[10px] font-black text-slate-500 uppercase tracking-widest">{{ t('nmt.detailMode') }}</span>
         <ToggleSwitch v-model="detailMode" @change="loadNmt" />
       </div>
 
       <div class="flex-1"></div>
 
-      <!-- Baseline Group - One stable container -->
-      <div v-if="nmtData" class="flex items-center gap-3 bg-white px-4 py-2 rounded-xl border border-slate-200 shadow-sm self-center" :class="{ 'bg-amber-50 border-amber-100': baseline }">
-        <div v-if="baseline" class="flex items-center gap-2 pr-2 border-r border-amber-200">
-          <History class="w-4 h-4 text-amber-600" />
-          <span class="text-[10px] font-black text-amber-700 uppercase tracking-widest">Baseline Set</span>
+      <div v-if="nmtData" class="flex items-center h-12 gap-2">
+        <div v-if="!baseline" class="flex items-center bg-white h-full px-2 rounded-xl border border-slate-200 shadow-sm">
+          <Button 
+            size="small" 
+            severity="primary" 
+            text 
+            @click="setBaseline"
+            class="font-bold px-4 hover:bg-indigo-50"
+          >
+            <template #icon><Flag class="w-4 h-4 mr-2" /></template>
+            {{ t('nmt.setBaseline') }}
+          </Button>
         </div>
-        
-        <Button 
-          v-if="!baseline"
-          size="small" 
-          severity="primary" 
-          label="Set Baseline"
-          @click="setBaseline"
-          class="font-bold px-4 rounded-lg shadow-sm"
-        >
-          <template #icon><Flag class="w-4 h-4 mr-2" /></template>
-        </Button>
-        
-        <Button 
-          v-else
-          size="small" 
-          severity="warn" 
-          label="Clear"
-          @click="clearBaseline"
-          class="font-bold px-4 rounded-lg shadow-sm"
-        >
-          <template #icon><RefreshCw class="w-4 h-4 mr-2" /></template>
-        </Button>
+        <div v-else class="flex items-center bg-amber-50 h-full px-4 rounded-xl border border-amber-100 shadow-sm gap-3">
+          <div class="flex items-center gap-2">
+            <History class="w-4 h-4 text-amber-600" />
+            <span class="text-[10px] font-black text-amber-700 uppercase tracking-widest">{{ t('nmt.baselineActive') }}</span>
+          </div>
+          <div class="w-px h-4 bg-amber-200"></div>
+          <Button 
+            size="small" 
+            severity="warn" 
+            text 
+            @click="clearBaseline"
+            class="font-bold px-2 py-1 text-[11px] hover:bg-white rounded-lg"
+          >
+            {{ t('nmt.clearBaseline') }}
+          </Button>
+        </div>
       </div>
     </div>
 
@@ -263,33 +265,33 @@ watch(selectedConn, (newVal) => {
       <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
         <Card class="border-0 shadow-sm border-l-4 border-l-indigo-500 rounded-3xl">
           <template #content>
-            <p class="text-xs font-bold text-slate-400 uppercase mb-1">Total Committed</p>
+            <p class="text-xs font-bold text-slate-400 uppercase mb-1">{{ t('nmt.totalCommitted') }}</p>
             <p class="text-2xl font-black text-slate-900">{{ formatBytes(nmtData.totalCommitted) }}</p>
             <p v-if="baselineData" class="text-xs font-bold mt-1" :class="nmtData.totalCommitted - baselineData.totalCommitted > 0 ? 'text-red-500' : 'text-emerald-500'">
-              {{ formatBytes(nmtData.totalCommitted - baselineData.totalCommitted) }} since baseline
+              {{ formatBytes(nmtData.totalCommitted - baselineData.totalCommitted) }}
             </p>
           </template>
         </Card>
         <Card class="border-0 shadow-sm border-l-4 border-l-emerald-500 rounded-3xl">
           <template #content>
-            <p class="text-xs font-bold text-slate-400 uppercase mb-1">Total Reserved</p>
+            <p class="text-xs font-bold text-slate-400 uppercase mb-1">{{ t('nmt.totalReserved') }}</p>
             <p class="text-2xl font-black text-slate-900">{{ formatBytes(nmtData.totalReserved) }}</p>
           </template>
         </Card>
         <Card class="border-0 shadow-sm border-l-4 border-l-amber-500 rounded-3xl">
           <template #content>
-            <p class="text-xs font-bold text-slate-400 uppercase mb-1">Baseline Status</p>
+            <p class="text-xs font-bold text-slate-400 uppercase mb-1">{{ t('nmt.established') }}</p>
             <p class="text-sm font-bold text-slate-600 flex items-center gap-2">
               <span v-if="baselineData" class="text-amber-600 flex items-center gap-1">
-                <Flag class="w-3.5 h-3.5" /> Established
+                <Flag class="w-3.5 h-3.5" /> {{ t('nmt.baselineActive') }}
               </span>
-              <span v-else class="text-slate-400 italic">Not set</span>
+              <span v-else class="text-slate-400 italic">{{ t('nmt.notSet') }}</span>
             </p>
           </template>
         </Card>
         <Card class="border-0 shadow-sm border-l-4 border-l-slate-400 rounded-3xl">
           <template #content>
-            <p class="text-xs font-bold text-slate-400 uppercase mb-1">Last Update</p>
+            <p class="text-xs font-bold text-slate-400 uppercase mb-1">{{ t('nmt.lastUpdate') }}</p>
             <p class="text-lg font-bold text-slate-600">{{ new Date().toLocaleTimeString() }}</p>
           </template>
         </Card>
@@ -301,7 +303,7 @@ watch(selectedConn, (newVal) => {
           <template #title>
             <div class="flex items-center gap-2 text-lg">
               <PieChartIcon class="w-5 h-5 text-indigo-600" />
-              <span>Category Breakdown</span>
+              <span>{{ t('nmt.categoryBreakdown') }}</span>
             </div>
           </template>
           <template #content>
@@ -314,7 +316,7 @@ watch(selectedConn, (newVal) => {
           <template #title>
             <div class="flex items-center gap-2 text-lg">
               <TableIcon class="w-5 h-5 text-indigo-600" />
-              <span>Usage Details</span>
+              <span>{{ t('nmt.usageDetails') }}</span>
             </div>
           </template>
           <template #content>
@@ -324,19 +326,19 @@ watch(selectedConn, (newVal) => {
               removableSort
               paginator :rows="8"
             >
-              <Column field="name" header="Category" sortable>
+              <Column field="name" :header="t('common.type')" sortable>
                 <template #body="slotProps">
                   <span class="font-semibold text-slate-700">
                     {{ slotProps.data.name || slotProps.data.category?.displayName || slotProps.data.category }}
                   </span>
                 </template>
               </Column>
-              <Column field="committed" header="Committed" sortable class="text-right">
+              <Column field="committed" :header="t('common.status')" sortable class="text-right">
                 <template #body="slotProps">
                   <span class="font-mono text-sm font-bold text-slate-700">{{ formatBytes(slotProps.data.committed) }}</span>
                 </template>
               </Column>
-              <Column field="deltaCommitted" header="Δ Baseline" sortable class="text-right" v-if="baselineData">
+              <Column field="deltaCommitted" :header="t('nmt.deltaBaseline')" sortable class="text-right" v-if="baselineData">
                 <template #body="slotProps">
                   <Tag 
                     v-if="Math.abs(slotProps.data.deltaCommitted) > 1024"
@@ -358,8 +360,8 @@ watch(selectedConn, (newVal) => {
       <div class="p-4 bg-slate-50 rounded-full mb-4">
         <Layers class="w-12 h-12 text-slate-300" />
       </div>
-      <h3 class="text-xl font-bold text-slate-900">Native Memory</h3>
-      <p class="text-slate-500 mt-1 max-w-sm text-center">Please select a JVM connection from the Dashboard or the dropdown above.</p>
+      <h3 class="text-xl font-bold text-slate-900">{{ t('common.nmt') }}</h3>
+      <p class="text-slate-500 mt-1 max-w-sm text-center">{{ t('diff.selectTwoDesc') }}</p>
     </div>
   </div>
 </template>

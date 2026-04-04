@@ -1,5 +1,6 @@
 <script setup>
 import { ref, computed, onMounted, watch } from 'vue'
+import { useI18n } from 'vue-i18n'
 import { useConnectionStore } from '../stores/connectionStore'
 import { useHistogram } from '../composables/useHistogram'
 import { RefreshCw, Monitor, ListFilter } from 'lucide-vue-next'
@@ -13,6 +14,7 @@ import HistogramSummary from '../components/histogram/HistogramSummary.vue'
 import HistogramChart from '../components/histogram/HistogramChart.vue'
 import HistogramTable from '../components/histogram/HistogramTable.vue'
 
+const { t } = useI18n()
 const connectionStore = useConnectionStore()
 const { 
   histogram, 
@@ -74,8 +76,8 @@ watch(selectedConn, (newVal) => {
     <!-- Header -->
     <div class="flex flex-col md:flex-row md:items-center justify-between gap-4">
       <div>
-        <h1 class="text-3xl font-bold text-slate-900 tracking-tight">Heap Histogram</h1>
-        <p class="text-slate-500 mt-1 text-sm">Real-time object distribution and memory usage.</p>
+        <h1 class="text-3xl font-bold text-slate-900 tracking-tight">{{ t('histogram.title') }}</h1>
+        <p class="text-slate-500 mt-1 text-sm">{{ t('histogram.subtitle') }}</p>
       </div>
     </div>
 
@@ -91,7 +93,7 @@ watch(selectedConn, (newVal) => {
           :options="connections" 
           optionLabel="label" 
           optionValue="id" 
-          placeholder="Select Connection" 
+          :placeholder="t('common.selectConnection')" 
           class="flex-1 lg:w-48 border-0 shadow-none bg-slate-50 rounded-xl"
         />
       </div>
@@ -112,10 +114,10 @@ watch(selectedConn, (newVal) => {
         size="small" 
         @click="refresh" 
         :loading="isLoading" 
-        class="rounded-xl font-bold px-6 min-w-[120px] flex-shrink-0"
+        class="rounded-xl font-bold px-6 min-w-[120px]"
       >
         <template #icon><RefreshCw :class="['w-4 h-4 mr-2', isLoading ? 'animate-spin' : '']" /></template>
-        Refresh
+        {{ t('common.refresh') }}
       </Button>
     </div>
 
@@ -153,8 +155,8 @@ watch(selectedConn, (newVal) => {
       <div class="p-4 bg-slate-50 rounded-full mb-4">
         <Monitor class="w-12 h-12 text-slate-300" />
       </div>
-      <h3 class="text-xl font-bold text-slate-900">No Connection Selected</h3>
-      <p class="text-slate-500 mt-1 max-w-sm text-center">Please select a JVM connection from the Dashboard or the dropdown above.</p>
+      <h3 class="text-xl font-bold text-slate-900">{{ t('common.noConnection') }}</h3>
+      <p class="text-slate-500 mt-1 max-w-sm text-center">{{ t('diff.selectTwoDesc') }}</p>
     </div>
   </div>
 </template>

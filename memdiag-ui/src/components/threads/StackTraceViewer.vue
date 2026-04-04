@@ -1,6 +1,8 @@
 <script setup>
+import { useI18n } from 'vue-i18n'
 import { Terminal } from 'lucide-vue-next'
 
+const { t } = useI18n()
 const props = defineProps({
   stackTrace: {
     type: Array,
@@ -28,7 +30,7 @@ const parseFrame = (frame) => {
   <div class="p-6 bg-slate-900 rounded-2xl mx-4 my-2 border border-white/5 shadow-inner">
     <div class="flex items-center gap-2 mb-4 text-indigo-400">
       <Terminal class="w-4 h-4" />
-      <span class="text-xs font-bold uppercase tracking-widest">Stack Trace</span>
+      <span class="text-xs font-bold uppercase tracking-widest">{{ t('threads.stackTrace') }}</span>
     </div>
     
     <div v-if="stackTrace.length" class="space-y-1 font-mono text-[11px] leading-relaxed overflow-x-auto">
@@ -57,13 +59,12 @@ const parseFrame = (frame) => {
     </div>
     
     <div v-else class="text-center py-8">
-      <p class="text-slate-500 italic text-sm">No stack trace available for this thread.</p>
+      <p class="text-slate-500 italic text-sm">{{ t('threads.noStackTrace') }}</p>
     </div>
   </div>
 </template>
 
 <style scoped>
-/* Ensure custom scrollbar for dark background without using @apply */
 div::-webkit-scrollbar-thumb {
   background-color: rgba(255, 255, 255, 0.1);
 }

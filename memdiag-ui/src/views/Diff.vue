@@ -1,5 +1,6 @@
 <script setup>
 import { ref, computed, onMounted, watch } from 'vue'
+import { useI18n } from 'vue-i18n'
 import { useConnectionStore } from '../stores/connectionStore'
 import { useSnapshots } from '../composables/useSnapshots'
 import { useDiff } from '../composables/useDiff'
@@ -20,6 +21,7 @@ import ProgressBar from 'primevue/progressbar'
 import Tag from 'primevue/tag'
 import { useToast } from 'primevue/usetoast'
 
+const { t } = useI18n()
 const connectionStore = useConnectionStore()
 const toast = useToast()
 const { snapshots, loadSnapshots } = useSnapshots()
@@ -60,12 +62,12 @@ const compare = async () => {
     if (res.success) {
       hasCompared.value = true
       if (diffData.value.length === 0) {
-        toast.add({ severity: 'info', summary: 'Comparison Complete', detail: 'No differences found between these snapshots.', life: 5000 })
+        toast.add({ severity: 'info', summary: t('diff.noDiff'), detail: t('diff.noDiffDesc'), life: 5000 })
       } else {
-        toast.add({ severity: 'success', summary: 'Comparison Complete', detail: `Found ${diffData.value.length} differences.`, life: 3000 })
+        toast.add({ severity: 'success', summary: t('common.success'), detail: `${diffData.value.length} diffs`, life: 3000 })
       }
     } else {
-      toast.add({ severity: 'error', summary: 'Comparison Failed', detail: res.error, life: 5000 })
+      toast.add({ severity: 'error', summary: t('common.error'), detail: res.error, life: 5000 })
     }
   }
 }
@@ -104,12 +106,12 @@ watch(selectedConn, (newVal) => {
     <!-- Header -->
     <div class="flex flex-col md:flex-row md:items-center justify-between gap-4">
       <div>
-        <h1 class="text-3xl font-bold text-slate-900 tracking-tight">Snapshot Comparison</h1>
-        <p class="text-slate-500 mt-1 text-sm text-balance">Analyze memory growth between two capture points.</p>
+        <h1 class="text-3xl font-bold text-slate-900 tracking-tight">{{ t('diff.title') }}</h1>
+        <p class="text-slate-500 mt-1 text-sm text-balance">{{ t('diff.subtitle') }}</p>
       </div>
     </div>
     
-    <!-- Controls Bar - Fixed Width Strategy -->
+    <!-- Controls Bar -->
     <div class="bg-white p-3 rounded-3xl shadow-sm border border-slate-100 flex flex-col lg:flex-row gap-4 items-stretch">
       <!-- Target Section -->
       <div class="flex items-center gap-3 lg:border-r lg:border-slate-100 lg:pr-6 shrink-0">
@@ -121,19 +123,19 @@ watch(selectedConn, (newVal) => {
           :options="connections" 
           optionLabel="label" 
           optionValue="id" 
-          placeholder="Target JVM" 
+          :placeholder="t('common.selectConnection')" 
           class="w-full lg:w-36 border-0 shadow-none bg-slate-50 rounded-xl font-medium"
         />
       </div>
 
-      <!-- Snapshots Selection Group - Using fixed widths and overflow ellipses -->
+      <!-- Snapshots Selection Group -->
       <div class="flex-1 flex flex-col sm:flex-row items-center gap-3 min-w-0">
         <Select 
           v-model="baseId" 
           :options="snapshotOptions" 
           optionLabel="label" 
           optionValue="id" 
-          placeholder="Baseline" 
+          :placeholder="t('diff.baseline')" 
           class="w-full sm:w-1/2 max-w-[280px] border-0 shadow-none bg-slate-50 rounded-xl text-sm overflow-hidden"
         />
         <div class="hidden sm:block shrink-0 text-slate-300">
@@ -144,12 +146,12 @@ watch(selectedConn, (newVal) => {
           :options="snapshotOptions" 
           optionLabel="label" 
           optionValue="id" 
-          placeholder="Comparison" 
+          :placeholder="t('diff.comparison')" 
           class="w-full sm:w-1/2 max-w-[280px] border-0 shadow-none bg-slate-50 rounded-xl text-sm overflow-hidden"
         />
       </div>
 
-      <!-- Action Button - High Priority -->
+      <!-- Action Button -->
       <Button 
         @click="compare" 
         :loading="isLoading" 
@@ -157,7 +159,7 @@ watch(selectedConn, (newVal) => {
         class="rounded-xl font-bold px-8 h-12 lg:h-auto min-w-[140px] shrink-0 shadow-lg shadow-indigo-100 whitespace-nowrap"
       >
         <template #icon><GitCompare class="w-4 h-4 mr-2" /></template>
-        Compare
+        {{ t('diff.compareBtn') }}
       </Button>
     </div>
 
@@ -168,21 +170,21 @@ watch(selectedConn, (newVal) => {
       <div class="grid grid-cols-1 md:grid-cols-3 gap-6">
         <Card class="border-0 shadow-sm border-l-4 border-l-slate-400 rounded-3xl overflow-hidden">
           <template #content>
-            <p class="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1">Baseline</p>
+            <p class="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1">{{ t('diff.baseline') }}</p>
             <p class="text-base font-bold text-slate-700 truncate" :title="baseSnapshot?.name || baseId">{{ baseSnapshot?.name || baseId }}</p>
             <p class="text-[10px] text-slate-400">{{ new Date(baseSnapshot?.createdAt || Date.now()).toLocaleString() }}</p>
           </template>
         </Card>
         <Card class="border-0 shadow-sm border-l-4 border-l-indigo-500 rounded-3xl overflow-hidden">
           <template #content>
-            <p class="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1">Comparison</p>
+            <p class="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1">{{ t('diff.comparison') }}</p>
             <p class="text-base font-bold text-slate-700 truncate" :title="compareSnapshot?.name || compareId">{{ compareSnapshot?.name || compareId }}</p>
             <p class="text-[10px] text-slate-400">{{ new Date(compareSnapshot?.createdAt || Date.now()).toLocaleString() }}</p>
           </template>
         </Card>
         <Card class="border-0 shadow-sm border-l-4 rounded-3xl" :class="diffData.reduce((acc, d) => acc + d.deltaBytes, 0) > 0 ? 'border-l-red-500' : 'border-l-emerald-500'">
           <template #content>
-            <p class="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1">Net Change</p>
+            <p class="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-1">{{ t('diff.netChange') }}</p>
             <p class="text-2xl font-black text-slate-900">
               {{ formatBytes(diffData.reduce((acc, d) => acc + d.deltaBytes, 0)) }}
             </p>
@@ -201,26 +203,26 @@ watch(selectedConn, (newVal) => {
             sortField="deltaBytes"
             :sortOrder="-1"
           >
-            <Column field="className" header="Class Name" sortable>
+            <Column field="className" :header="t('histogram.className')" sortable>
               <template #body="slotProps">
                 <code class="text-[11px] text-indigo-600 font-medium break-all">{{ slotProps.data.className }}</code>
               </template>
             </Column>
-            <Column field="deltaObjects" header="Δ Objects" sortable class="text-right">
+            <Column field="deltaObjects" :header="t('diff.deltaObjects')" sortable class="text-right">
               <template #body="slotProps">
                 <span :class="['font-mono text-sm', slotProps.data.deltaObjects > 0 ? 'text-red-500 font-bold' : slotProps.data.deltaObjects < 0 ? 'text-emerald-500' : 'text-slate-400']">
                   {{ formatNumber(slotProps.data.deltaObjects) }}
                 </span>
               </template>
             </Column>
-            <Column field="deltaBytes" header="Δ Size" sortable class="text-right">
+            <Column field="deltaBytes" :header="t('diff.deltaSize')" sortable class="text-right">
               <template #body="slotProps">
                 <span :class="['font-mono text-sm', slotProps.data.deltaBytes > 0 ? 'text-red-500 font-bold' : slotProps.data.deltaBytes < 0 ? 'text-emerald-500' : 'text-slate-400']">
                   {{ formatBytes(slotProps.data.deltaBytes) }}
                 </span>
               </template>
             </Column>
-            <Column field="growthRate" header="Growth" sortable class="text-right">
+            <Column field="growthRate" :header="t('diff.growth')" sortable class="text-right">
               <template #body="slotProps">
                 <Tag 
                   v-if="Math.abs(slotProps.data.growthRate) > 0.01"
@@ -241,8 +243,8 @@ watch(selectedConn, (newVal) => {
       <div class="p-4 bg-emerald-50 rounded-full mb-4 text-emerald-500">
         <CheckCircle2 class="w-12 h-12" />
       </div>
-      <h3 class="text-xl font-bold text-slate-900">No Differences Found</h3>
-      <p class="text-slate-500 mt-1 max-w-sm text-center">The two snapshots are identical in terms of heap histogram data.</p>
+      <h3 class="text-xl font-bold text-slate-900">{{ t('diff.noDiff') }}</h3>
+      <p class="text-slate-500 mt-1 max-w-sm text-center">{{ t('diff.noDiffDesc') }}</p>
     </div>
 
     <!-- Selection Guide -->
@@ -250,22 +252,21 @@ watch(selectedConn, (newVal) => {
       <div class="p-4 bg-slate-50 rounded-full mb-4">
         <GitCompare class="w-12 h-12 text-slate-300" />
       </div>
-      <h3 class="text-xl font-bold text-slate-900">Compare Snapshots</h3>
-      <p class="text-slate-500 mt-1 max-w-sm text-center">Please select a JVM connection from the Dashboard or the dropdown above to begin comparison.</p>
+      <h3 class="text-xl font-bold text-slate-900">{{ t('diff.selectTwo') }}</h3>
+      <p class="text-slate-500 mt-1 max-w-sm text-center">{{ t('diff.selectTwoDesc') }}</p>
     </div>
     
     <div v-else-if="!isLoading && selectedConn && !hasCompared" class="flex flex-col items-center justify-center py-20 bg-white rounded-3xl border border-dashed border-slate-200">
       <div class="p-4 bg-slate-50 rounded-full mb-4 text-indigo-500">
         <Layers class="w-12 h-12" />
       </div>
-      <h3 class="text-xl font-bold text-slate-900">Select Two Snapshots</h3>
-      <p class="text-slate-500 mt-1 max-w-sm text-center">Use the dropdowns above to select a baseline and a comparison snapshot for JVM: <b>{{ selectedConn }}</b></p>
+      <h3 class="text-xl font-bold text-slate-900">{{ t('diff.selectTwo') }}</h3>
+      <p class="text-slate-500 mt-1 max-w-sm text-center">{{ t('diff.selectTwoDesc') }}</p>
     </div>
   </div>
 </template>
 
 <style scoped>
-/* Ensure PrimeVue Select handles long text with ellipsis */
 :deep(.p-select-label) {
   white-space: nowrap;
   overflow: hidden;

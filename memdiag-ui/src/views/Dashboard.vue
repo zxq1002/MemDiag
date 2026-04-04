@@ -1,5 +1,6 @@
 <script setup>
 import { ref, onMounted } from 'vue'
+import { useI18n } from 'vue-i18n'
 import { useDashboardStore } from '../stores/dashboardStore'
 import { useConnectionStore } from '../stores/connectionStore'
 import { 
@@ -20,6 +21,7 @@ import Column from 'primevue/column'
 import Card from 'primevue/card'
 import Tag from 'primevue/tag'
 
+const { t } = useI18n()
 const dashboardStore = useDashboardStore()
 const connectionStore = useConnectionStore()
 
@@ -57,8 +59,8 @@ const selectConnection = (id) => {
     <!-- Header -->
     <div class="flex items-center justify-between">
       <div>
-        <h1 class="text-3xl font-bold text-slate-900 tracking-tight">Dashboard</h1>
-        <p class="text-slate-500 mt-1">Manage JVM connections and monitor system health.</p>
+        <h1 class="text-3xl font-bold text-slate-900 tracking-tight">{{ t('dashboard.title') }}</h1>
+        <p class="text-slate-500 mt-1">{{ t('dashboard.subtitle') }}</p>
       </div>
       <Button 
         icon="RefreshCw" 
@@ -83,7 +85,7 @@ const selectConnection = (id) => {
               <Monitor class="w-6 h-6" />
             </div>
             <div>
-              <p class="text-sm font-medium text-slate-500 uppercase tracking-wider">Active Connections</p>
+              <p class="text-sm font-medium text-slate-500 uppercase tracking-wider">{{ t('dashboard.activeConnections') }}</p>
               <p class="text-2xl font-bold text-slate-900">{{ dashboardStore.connections.length }}</p>
             </div>
           </div>
@@ -97,8 +99,8 @@ const selectConnection = (id) => {
               <CheckCircle2 class="w-6 h-6" />
             </div>
             <div>
-              <p class="text-sm font-medium text-slate-500 uppercase tracking-wider">System Status</p>
-              <p class="text-2xl font-bold text-slate-900">Healthy</p>
+              <p class="text-sm font-medium text-slate-500 uppercase tracking-wider">{{ t('dashboard.systemStatus') }}</p>
+              <p class="text-2xl font-bold text-slate-900">{{ t('dashboard.healthy') }}</p>
             </div>
           </div>
         </template>
@@ -111,7 +113,7 @@ const selectConnection = (id) => {
               <Cpu class="w-6 h-6" />
             </div>
             <div>
-              <p class="text-sm font-medium text-slate-500 uppercase tracking-wider">Agent Nodes</p>
+              <p class="text-sm font-medium text-slate-500 uppercase tracking-wider">{{ t('dashboard.agentNodes') }}</p>
               <p class="text-2xl font-bold text-slate-900">
                 {{ dashboardStore.connections.filter(c => c.type === 'agent').length }}
               </p>
@@ -128,7 +130,7 @@ const selectConnection = (id) => {
           <template #title>
             <div class="flex items-center gap-2 text-lg">
               <Network class="w-5 h-5 text-indigo-600" />
-              <span>Live Connections</span>
+              <span>{{ t('dashboard.liveConnections') }}</span>
             </div>
           </template>
           <template #content>
@@ -142,11 +144,11 @@ const selectConnection = (id) => {
               <template #empty>
                 <div class="text-center py-8">
                   <AlertCircle class="w-12 h-12 text-slate-300 mx-auto mb-3" />
-                  <p class="text-slate-500">No active JVM connections found.</p>
+                  <p class="text-slate-500">{{ t('dashboard.noConnections') }}</p>
                 </div>
               </template>
               
-              <Column field="id" header="Connection ID">
+              <Column field="id" :header="t('common.id')">
                 <template #body="slotProps">
                   <div class="flex items-center gap-2">
                     <span :class="['font-semibold', connectionStore.currentConnectionId === slotProps.data.id ? 'text-indigo-600' : 'text-slate-700']">
@@ -156,23 +158,23 @@ const selectConnection = (id) => {
                   </div>
                 </template>
               </Column>
-              <Column field="type" header="Type">
+              <Column field="type" :header="t('common.type')">
                 <template #body="slotProps">
                   <span class="capitalize text-sm text-slate-500">{{ slotProps.data.type }}</span>
                 </template>
               </Column>
-              <Column field="state" header="Status">
+              <Column field="state" :header="t('common.status')">
                 <template #body="slotProps">
                   <Tag :value="slotProps.data.state" :severity="getSeverity(slotProps.data.state)" />
                 </template>
               </Column>
-              <Column header="Actions" class="text-right">
+              <Column :header="t('common.actions')" class="text-right">
                 <template #body="slotProps">
                   <div class="flex justify-end gap-2">
                     <Button 
                       v-if="connectionStore.currentConnectionId !== slotProps.data.id"
                       size="small" 
-                      label="Select" 
+                      :label="t('dashboard.selectBtn')" 
                       severity="primary" 
                       text 
                       outlined
@@ -182,7 +184,7 @@ const selectConnection = (id) => {
                     <Button 
                       v-else
                       size="small" 
-                      label="Active" 
+                      :label="t('dashboard.activeBtn')" 
                       severity="success" 
                       class="rounded-lg py-1 px-3 shadow-sm"
                       disabled
@@ -211,22 +213,22 @@ const selectConnection = (id) => {
           <template #title>
             <div class="flex items-center gap-2 text-lg">
               <Plus class="w-5 h-5 text-indigo-600" />
-              <span>New Connection</span>
+              <span>{{ t('dashboard.newConnection') }}</span>
             </div>
           </template>
           <template #content>
             <div class="space-y-4">
               <div class="flex flex-col gap-2">
-                <label for="conn-id" class="text-sm font-semibold text-slate-700">Display ID</label>
-                <InputText id="conn-id" v-model="newConnId" placeholder="e.g. production-app" class="rounded-xl bg-slate-50 border-slate-100" />
+                <label for="conn-id" class="text-sm font-semibold text-slate-700">{{ t('dashboard.displayId') }}</label>
+                <InputText id="conn-id" v-model="newConnId" :placeholder="t('dashboard.displayId')" class="rounded-xl bg-slate-50 border-slate-100" />
               </div>
               <div class="flex flex-col gap-2">
-                <label for="conn-target" class="text-sm font-semibold text-slate-700">Target (PID or Agent)</label>
-                <InputText id="conn-target" v-model="newConnTarget" placeholder="e.g. 1234 or localhost:6789" class="rounded-xl bg-slate-50 border-slate-100" />
-                <p class="text-[10px] text-slate-400 italic">Leave empty for current JVM</p>
+                <label for="conn-target" class="text-sm font-semibold text-slate-700">{{ t('dashboard.targetPidOrAgent') }}</label>
+                <InputText id="conn-target" v-model="newConnTarget" :placeholder="t('dashboard.targetPidOrAgent')" class="rounded-xl bg-slate-50 border-slate-100" />
+                <p class="text-[10px] text-slate-400 italic">{{ t('dashboard.currentJvmHint') }}</p>
               </div>
               <Button 
-                label="Connect JVM" 
+                :label="t('dashboard.connectBtn')" 
                 class="w-full mt-2 rounded-xl font-bold shadow-md" 
                 @click="handleConnect"
                 :loading="dashboardStore.isLoading"
@@ -237,12 +239,12 @@ const selectConnection = (id) => {
 
         <div class="p-6 bg-slate-900 rounded-3xl text-white overflow-hidden relative group">
           <div class="relative z-10">
-            <h4 class="font-bold text-lg mb-2">Need Help?</h4>
+            <h4 class="font-bold text-lg mb-2">{{ t('dashboard.needHelp') }}</h4>
             <p class="text-slate-400 text-sm mb-4 leading-relaxed">
-              Ensure the MemDiag agent is attached or you have sufficient permissions for JMX attach.
+              {{ t('dashboard.helpDesc') }}
             </p>
             <a href="https://github.com/zxq1002/MemDiag" target="_blank" class="text-indigo-400 text-sm font-bold flex items-center gap-1 group-hover:gap-2 transition-all">
-              Read Documentation <Plus class="w-4 h-4 rotate-45" />
+              {{ t('dashboard.readDocs') }} <Plus class="w-4 h-4 rotate-45" />
             </a>
           </div>
           <Activity class="absolute -bottom-4 -right-4 w-32 h-32 text-white/5 -rotate-12" />

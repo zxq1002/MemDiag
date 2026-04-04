@@ -1,4 +1,5 @@
 <script setup>
+import { useI18n } from 'vue-i18n'
 import { 
   ShieldAlert, 
   AlertTriangle, 
@@ -12,6 +13,7 @@ import Accordion from 'primevue/accordion'
 import AccordionTab from 'primevue/accordiontab'
 import SelectButton from 'primevue/selectbutton'
 
+const { t } = useI18n()
 const props = defineProps({
   issues: Array,
   severityFilter: Array
@@ -44,7 +46,7 @@ const onFilterChange = (val) => {
     <div class="flex flex-col sm:flex-row sm:items-center justify-between gap-4 px-2">
       <h3 class="text-lg font-bold text-slate-800 flex items-center gap-2">
         <ShieldAlert class="w-5 h-5 text-indigo-600" />
-        Detected Issues
+        <span>{{ t('threads.activeThreads') }}</span>
       </h3>
       
       <SelectButton 
@@ -82,7 +84,7 @@ const onFilterChange = (val) => {
             <div v-if="issue.recommendations?.length" class="bg-slate-50 rounded-2xl p-6 border border-slate-100">
               <h4 class="font-bold text-slate-800 flex items-center gap-2 mb-4 text-sm uppercase tracking-wider">
                 <Lightbulb class="w-4 h-4 text-amber-500" />
-                Actionable Recommendations
+                <span>{{ t('diagnosis.recommendations') || 'Recommendations' }}</span>
               </h4>
               <div class="space-y-3">
                 <div v-for="(rec, ridx) in issue.recommendations" :key="ridx" class="flex gap-3">
@@ -109,8 +111,8 @@ const onFilterChange = (val) => {
       <div class="p-4 bg-emerald-50 rounded-full mb-4 text-emerald-500">
         <CheckCircle2 class="w-12 h-12" />
       </div>
-      <h3 class="text-xl font-bold text-slate-900">No matching issues</h3>
-      <p class="text-slate-500 mt-1 max-w-sm text-center">Adjust your severity filters or enjoy a healthy system!</p>
+      <h3 class="text-xl font-bold text-slate-900">{{ t('diff.noDiff') }}</h3>
+      <p class="text-slate-500 mt-1 max-w-sm text-center">{{ t('diff.noDiffDesc') }}</p>
     </div>
   </div>
 </template>

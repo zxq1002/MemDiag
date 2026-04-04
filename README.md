@@ -1547,7 +1547,55 @@ com.example.MyService#validate                   5,678      8,765.43        1.54
 
 ## 架构与实现原理
 
-### 两种使用模式
+MemDiag 采用高度解耦的模块化架构，支持从命令行到可视化界面的多入口诊断。
+
+### 1. 整体架构概览
+
+```
+┌────────────────────────────────────────────────────────────────────────┐
+│                          MemDiag Entry Points                          │
+│                                                                        │
+│ ┌───────────────────────────────────┐    ┌───────────────────────────┐ │
+│ │            memdiag-cli            │    │        memdiag-ui         │ │
+│ │  ┌───────────────┐ ┌───────────┐  │    │  (Vue 3 Modern Web SPA)   │ │
+│ │  │ HistogramCmd  │ │ ThreadsCmd│..│    └─────────────┬─────────────┘ │
+│ │  └───────────────┘ └───────────┘  │                  │ REST API      │
+│ │  使用模式选择：                     │    ┌─────────────▼─────────────┐ │
+│ │  ├─ 不指定 --agent → JMX 模式     │    │        memdiag-web        │ │
+│ │  └─ 指定 --agent   → Agent 模式   │    │  (Spring Boot API Layer)  │ │
+│ └─────────────────┬─────────────────┘    └─────────────┬─────────────┘ │
+└───────────────────┼────────────────────────────────────┼───────────────┘
+                    │                                    │
+                    ├────────────────────────────────────┘
+                    │
+         ┌──────────┴─────────┐
+         ▼                    ▼
+┌─────────────────┐  ┌─────────────────┐
+│    JMX 模式     │  │   Agent 模式    │
+│                 │  │                 │
+│  memdiag-core   │  │  memdiag-core   │
+│  ┌───────────┐  │  │  ┌───────────┐  │
+│  │ JmxClient │  │  │  │AgentClient│  │
+│  └───────────┘  │  │  └───────────┘  │
+└─────────────────┘  └─────────────────┘
+         │                    │
+         ▼                    ▼
+┌─────────────────┐  ┌─────────────────┐
+│   目标 JVM      │  │memdiag-agent.jar│
+│ (HotSpot JVM)   │  │(在目标 JVM 运行) │
+└─────────────────┘  └─────────────────┘
+```
+
+### 2. 核心模块职责说明
+
+- **`memdiag-cli`**: 统一的命令行入口与服务宿主。既支持直接执行诊断子命令，也负责启动 Web 后端 API。
+- **`memdiag-ui` (New!)**: 现代化的 Web 表现层。基于 Vue 3 + Pinia + PrimeVue 4 打造，提供堆直方图可视化、线程分析、视觉化差异对比 (Diff) 及 NMT 基线追踪。
+- **`memdiag-web` (Refactored)**: 纯净的 REST 后端服务。负责服务编排、管理快照序列化持久化，为 Web 前端提供核心 API。
+- **`memdiag-core`**: 诊断逻辑心脏。包含 JMX 采集引擎、诊断规则引擎、HeapDiff 算法及 NMT 解析逻辑。
+- **`memdiag-agent`**: Java Agent 代理。通过 ASM 字节码插桩实现实时分配追踪与方法性能监控。
+- **`memdiag-native`**: JVMTI 原生增强层。使用 C++ 实现，支持高精度内存事件捕获和混合栈分析。
+
+### 3. 两种使用模式
 
 MemDiag 提供**两种使用模式**，通过 `--agent` 选项切换：
 
@@ -1671,104 +1719,6 @@ memdiag-cli (JDK)
    - **能力**：查看 JVMTI 库加载状态、已注册回调及 Native 层内存开销。
 
 > **优雅降级机制**：如果原生库加载失败（如平台不兼容），MemDiag 会自动回退到纯 Java 模式，确保基础诊断功能依然可用。
-
----
-
-### 整体架构
-
-```
-┌─────────────────────────────────────────────────────────────────┐
-│                        memdiag-cli                             │
-│  ┌──────────────┐  ┌──────────────┐  ┌──────────────┐     │
-│  │ HistogramCmd │  │  ThreadsCmd  │  │  DiagnoseCmd │     │
-│  └──────────────┘  └──────────────┘  └──────────────┘     │
-│  ┌──────────────┐  ┌──────────────┐  ┌──────────────┐     │
-│  │  NativeCmd   │  │ SnapshotCmd  │  │   DiffCmd    │     │
-│  └──────────────┘  └──────────────┘  └──────────────┘     │
-│                                                               │
-│  使用模式选择：                                                │
-│  ├─ 不指定 --agent  →  JMX 模式                            │
-│  └─ 指定 --agent    →  Agent 模式                           │
-└─────────────────────────────────────────────────────────────────┘
-                              │
-         ┌────────────────────┴────────────────────┐
-         ▼                                         ▼
-┌─────────────────────────┐           ┌─────────────────────────┐
-│      JMX 模式          │           │     Agent 模式          │
-│                         │           │                         │
-│  memdiag-core          │           │  memdiag-core          │
-│  ┌─────────────────┐  │           │  ┌─────────────────┐  │
-│  │  JmxClient     │  │           │  │  AgentClient    │  │
-│  │  (Attach API)  │  │           │  │  (HTTP)         │  │
-│  └─────────────────┘  │           │  └─────────────────┘  │
-└─────────────────────────┘           └─────────────────────────┘
-         │                                         │
-         ▼                                         ▼
-┌──────────────────┐                    ┌─────────────────────────┐
-│   目标 JVM       │                    │  memdiag-agent.jar    │
-│  (HotSpot JVM)  │                    │  (在目标 JVM 内运行)  │
-│                  │                    └─────────────────────────┘
-│  内置 MBeans:    │                               │
-│  - Memory        │                               ▼
-│  - Threading     │                    ┌──────────────────┐
-│  - HotSpotDiagnostic│               │    目标 JVM      │
-└──────────────────┘                    └──────────────────┘
-```
-
-### 核心模块说明
-
-#### 1. memdiag-cli - 命令行接口
-
-使用 Picocli 框架实现子命令模式。每个子命令继承 `BaseCommand`，负责：
-- 参数解析
-- 调用 core 模块的分析器
-- 结果格式化输出
-
-#### 2. memdiag-core - 核心分析库
-
-**JmxClient**: JMX 连接器，支持动态附着到目标 JVM
-  - 自动发现 `tools.jar`
-  - 支持 PID 附着和当前 JVM 附着
-
-**JmxHeapAnalyzer**: 堆内存分析
-  - 使用 `HotSpotDiagnostic` MBean
-  - 支持超时保护（500ms）
-  - ResourceLimiter 防止 Safe Point 停顿过长
-
-**ThreadAnalyzer**: 线程分析
-  - 使用 `Threading` MBean
-  - 获取线程状态、堆栈、阻塞计数
-
-**DiagnosisEngine**: 诊断引擎
-  - 整合多个分析器
-  - 规则匹配识别问题
-  - 生成建议
-
-**HeapDiff / Snapshot**: 快照与对比
-  - Snapshot: 包含堆直方图和线程转储的不可变对象
-  - SnapshotManager: 序列化存储管理
-  - HeapDiff: 差异计算与分析
-
-**EnvironmentPrecheck**: 环境预检
-  - PID 存在性检查
-  - JDK 检测（非 JRE）
-  - 权限检查
-  - Linux ptrace_scope 检测
-
-#### 3. memdiag-native - 原生内存分析
-
-**ProcFileSystemNativeAnalyzer**: /proc 文件系统解析
-  - 解析 `/proc/<pid>/maps` 获取内存区域
-  - 解析 `/proc/<pid>/smaps` 获取详细统计
-
-**JVMTI Agent**: C++ 实现的 JVMTI Agent
-  - 动态挂载/卸载
-  - 字节码插桩与恢复
-  - 分配事件追踪
-
-#### 4. memdiag-agent - 远程分析 Agent
-
-提供基于网络的远程分析能力，避免在生产服务器安装工具。
 
 ---
 
@@ -2168,8 +2118,8 @@ MemDiag/
 ├── memdiag-native/        # 原生内存分析
 │   ├── src/main/java/     # Java 绑定
 │   └── src/main/c/        # JVMTI C++ 实现
-├── memdiag-web/           # Web 界面
-├── memdiag-ui/            # UI 前端
+├── memdiag-web/           # 后端 API 服务
+├── memdiag-ui/            # 现代 Web 前端 (Vue 3)
 ├── scripts/               # 辅助脚本
 │   ├── quick-validate.sh  # 快速验证
 │   ├── uat-blackbox.sh    # UAT 黑盒测试
@@ -2219,7 +2169,7 @@ mvn test -pl memdiag-core
 
 ## 许可证
 
-本项目仅供学习和研究使用。
+本项目遵循 **Apache License 2.0** 开源协议。详细内容请参阅项目根目录下的 [LICENSE](LICENSE) 文件。
 
 ## 贡献
 
@@ -2293,196 +2243,57 @@ memdiag methods --sort=count --agent=localhost:6789    # 方法统计（按调�
 
 ---
 
-## Web 界面
+## 现代 Web 可视化界面 (New!)
 
-MemDiag 提供基于 Spring Boot 的 Web 后端服务，支持通过 REST API 和 WebSocket 进行实时内存分析。
+MemDiag 现已升级为**前后端分离架构**。除了通过 CLI 直接分析外，您还可以通过 Web 控制台获得更专业、更直观的诊断体验。
 
-### 功能特性
+### 核心亮点
 
-- **多连接管理** - 同时连接和管理多个 JVM 进程
-- **双模连接** - 支持 JMX 模式和 Agent 模式两种连接方式
-- **REST API** - 提供完整的分析能力 HTTP 接口
-- **实时监控** - WebSocket 支持实时推送分析数据
-- **健康检查** - 集成 Spring Boot Actuator
+- **全站中英文支持**：默认中文，支持在设置中即时切换为英文。
+- **快照视觉对比 (Visual Diff)**：选中任意两个历史快照，系统将自动高亮内存增长的类，极速定位内存泄漏。
+- **语义化堆栈高亮**：解析 Java 线程堆栈，通过不同色彩区分包名、类名、方法名及代码行号。
+- **NMT 基线追踪**：支持一键将当前堆外内存设为基线，实时观察各分类的偏移量 (Δ)。
+- **全栈数据同步**：连接状态和系统级设置在 Dashboard 及所有分析视图间保持实时同步。
 
 ### 快速启动
 
-```bash
-# 进入 web 模块目录
-cd memdiag-web
+1. **启动后端 API 服务 (`memdiag-web`)**:
+   ```bash
+   cd memdiag-web
+   mvn spring-boot:run
+   ```
+   后端 API 默认监听 `http://localhost:8080`。
 
-# 启动 Web 服务
-mvn spring-boot:run
+2. **启动前端 UI 服务 (`memdiag-ui`)**:
+   ```bash
+   cd memdiag-ui
+   npm install
+   npm run dev
+   ```
+   开发服务器默认运行在 `http://localhost:3000`。
 
-# 或者打包后运行
-mvn clean package
-java -jar target/memdiag-web-1.0.0-SNAPSHOT.jar
-```
+3. **访问控制台**:
+   在浏览器中打开 `http://localhost:3000`。系统会自动尝试挂载到当前运行的 JVM 进程（名为 `current`）。
 
-服务默认启动在 `http://localhost:8080`
+### API 端点规范
 
-### API 端点
+后端 `memdiag-web` 现已改造为纯净的 REST 服务。所有分析请求（包括 JMX 模式和 Agent 模式）均通过以下核心端点路由：
 
-#### 连接管理
-
-| 端点 | 方法 | 说明 |
+| 功能 | 方法 | 端点 |
 |------|------|------|
-| `/api/v1/connections` | GET | 获取所有连接 |
-| `/api/v1/connections/{id}` | POST | 创建新连接（target 参数：pid 或 host:port） |
-| `/api/v1/connections/{id}` | DELETE | 断开连接 |
-
-#### 核心分析接口（JMX/Agent 双模）
-
-| 端点 | 方法 | 说明 |
-|------|------|------|
-| `/api/v1/histogram/{id}` | GET | 获取堆直方图（limit 参数） |
-| `/api/v1/threads/{id}` | GET | 获取线程分析 |
-| `/api/v1/diagnose/{id}` | GET | 运行自动诊断 |
-| `/api/v1/nmt/{id}` | GET | 获取 NMT 分析（detail 参数） |
-
-#### Agent API（仅 Agent 模式）
-
-| 端点 | 方法 | 说明 |
-|------|------|------|
-| `/api/v1/agent/status/{id}` | GET | 获取 Agent 状态 |
-| `/api/v1/agent/config/{id}` | GET | 获取 Agent 配置 |
-| `/api/v1/agent/metrics/{id}` | GET | 获取 Agent 指标 |
-| `/api/v1/agent/detach/{id}` | POST | 请求 Agent 卸载 |
-
-#### Native 内存 API（仅 Agent 模式）
-
-| 端点 | 方法 | 说明 |
-|------|------|------|
-| `/api/v1/native/status/{id}` | GET | Native 分析器状态 |
-| `/api/v1/native/summary/{id}` | GET | Native 内存摘要 |
-| `/api/v1/native/regions/{id}` | GET | 内存区域列表 |
-| `/api/v1/native/diagnose/{id}` | GET | Native 泄漏诊断 |
-
-#### 分配追踪 API（仅 Agent 模式）
-
-| 端点 | 方法 | 说明 |
-|------|------|------|
-| `/api/v1/allocations/recent/{id}` | GET | 最近分配事件（limit 参数） |
-| `/api/v1/allocations/stats/{id}` | GET | 分配统计 |
-| `/api/v1/allocations/top/{id}` | GET | Top N 分配类型（limit 参数） |
-| `/api/v1/allocations/rate/{id}` | GET | 分配速率 |
-| `/api/v1/allocations/summary/{id}` | GET | 分配摘要 |
-
-#### 方法监控 API（仅 Agent 模式）
-
-| 端点 | 方法 | 说明 |
-|------|------|------|
-| `/api/v1/methods/stats/{id}` | GET | 方法统计（limit 参数） |
-| `/api/v1/methods/slow/{id}` | GET | 慢方法列表（limit, thresholdMs 参数） |
-
-#### 仪器控制 API（仅 Agent 模式）
-
-| 端点 | 方法 | 说明 |
-|------|------|------|
-| `/api/v1/instrumentation/status/{id}` | GET | 仪器状态 |
-| `/api/v1/instrumentation/allocation/enable/{id}` | POST | 启用分配追踪 |
-| `/api/v1/instrumentation/allocation/disable/{id}` | POST | 禁用分配追踪 |
-| `/api/v1/instrumentation/methods/enable/{id}` | POST | 启用方法监控 |
-| `/api/v1/instrumentation/methods/disable/{id}` | POST | 禁用方法监控 |
-
-#### JVMTI API（仅 Agent 模式）
-
-| 端点 | 方法 | 说明 |
-|------|------|------|
-| `/api/v1/jvmti/status/{id}` | GET | JVMTI 状态 |
-
-#### Actuator 端点
-
-| 端点 | 说明 |
-|------|------|
-| `/actuator/health` | 健康检查 |
-| `/actuator/metrics` | 应用指标 |
-| `/actuator/info` | 应用信息 |
-
-### 使用示例
-
-#### 1. 连接到目标 JVM
-
-```bash
-# JMX 模式：连接到本地 JVM（当前进程）
-curl -X POST "http://localhost:8080/api/v1/connections/local"
-
-# JMX 模式：连接到指定 PID 的 JVM
-curl -X POST "http://localhost:8080/api/v1/connections/myapp?target=12345"
-
-# Agent 模式：连接到运行 MemDiag Agent 的 JVM
-curl -X POST "http://localhost:8080/api/v1/connections/myapp-agent?target=localhost:6789"
-```
-
-#### 2. 获取分析数据（JMX/Agent 双模通用）
-
-```bash
-# 获取堆直方图（前 20 名）
-curl "http://localhost:8080/api/v1/histogram/myapp?limit=20"
-
-# 获取线程分析
-curl "http://localhost:8080/api/v1/threads/myapp"
-
-# 运行自动诊断
-curl "http://localhost:8080/api/v1/diagnose/myapp"
-
-# 获取 NMT 分析
-curl "http://localhost:8080/api/v1/nmt/myapp?detail=true"
-```
-
-#### 3. Agent 模式特有功能
-
-```bash
-# 获取 Agent 状态
-curl "http://localhost:8080/api/v1/agent/status/myapp-agent"
-
-# 获取 Native 内存摘要
-curl "http://localhost:8080/api/v1/native/summary/myapp-agent"
-
-# 获取分配统计
-curl "http://localhost:8080/api/v1/allocations/stats/myapp-agent"
-
-# 获取 Top N 分配类型
-curl "http://localhost:8080/api/v1/allocations/top/myapp-agent?limit=10"
-
-# 获取方法统计
-curl "http://localhost:8080/api/v1/methods/stats/myapp-agent?limit=20"
-
-# 启用分配追踪
-curl -X POST "http://localhost:8080/api/v1/instrumentation/allocation/enable/myapp-agent"
-
-# 启用方法监控
-curl -X POST "http://localhost:8080/api/v1/instrumentation/methods/enable/myapp-agent"
-```
-
-#### 4. 断开连接
-
-```bash
-curl -X DELETE "http://localhost:8080/api/v1/connections/myapp"
-```
-
-### 配置选项
-
-可以通过 `application.properties` 或环境变量配置：
-
-```properties
-# 服务端口
-server.port=8080
-
-# 上下文路径
-server.servlet.context-path=/
-
-# Actuator 端点暴露
-management.endpoints.web.exposure.include=health,info,metrics
-```
+| **连接管理** | POST | `/api/v1/connections/{id}` (支持 `target` 参数) |
+| **堆内存直方图** | GET | `/api/v1/histogram/{id}?limit=N` |
+| **线程分析** | GET | `/api/v1/threads/{id}` |
+| **自动诊断** | GET | `/api/v1/diagnose/{id}` |
+| **原生内存 (NMT)** | GET | `/api/v1/nmt/{id}?detail=true` |
+| **快照管理** | POST | `/api/v1/snapshots/{id}?name={name}` |
 
 ### 技术栈
 
-- **Spring Boot 2.7** - Web 框架
-- **Spring WebSocket** - 实时通信
-- **Spring Actuator** - 监控和管理
-- **MemDiag Core** - 核心分析能力
-- **MemDiag Agent** - Agent 集成
+- **前端 (`memdiag-ui`)**: Vue 3 (Composition API), Pinia (State Management), PrimeVue 4 (UI Library), Tailwind CSS 4, ECharts (Data Visualization), Vue I18n.
+- **后端 (`memdiag-web`)**: Spring Boot 2.7 (REST API, Actuator, WebSocket).
+- **核心分析 (`memdiag-core`)**: JMX Attach API, ASM (Bytecode Instrumentation).
+- **原生层 (`memdiag-native`)**: C++17, JVMTI.
 
 ---
 
